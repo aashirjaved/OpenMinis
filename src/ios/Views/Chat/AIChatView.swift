@@ -68,21 +68,21 @@ private final class CachedViewModel: ObservableObject {
 // MARK: - Color Palette (clean light theme)
 
 enum ChatColors {
-    static let background = Color(UIColor.systemBackground)
-    static let secondaryBg = Color(UIColor.secondarySystemBackground)
-    static let inputIconBg = Color(UIColor.secondarySystemBackground)
-    static let inputIconBorder = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.35, alpha: 1) : UIColor(white: 0, alpha: 0) })
-    static let inputBg = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.12, alpha: 1) : .white })
-    static let inputBorder = Color(UIColor.separator)
-    static let primaryText = Color(UIColor.label)
-    static let secondaryText = Color(UIColor.secondaryLabel)
-    static let tertiaryText = Color(UIColor.tertiaryLabel)
-    static let userBubble = Color(UIColor.tertiarySystemFill)
-    static let toolBg = Color(UIColor.tertiarySystemGroupedBackground)
-    static let toolBorder = Color(UIColor.separator).opacity(0.5)
-    static let accent = Color(UIColor.label)
-    static let sendButton = Color(UIColor.label)
-    static let sendButtonDisabled = Color(UIColor.quaternaryLabel)
+    static let background = MagziDesign.background
+    static let secondaryBg = MagziDesign.surface
+    static let inputIconBg = MagziDesign.surfaceSecondary
+    static let inputIconBorder = MagziDesign.hairline
+    static let inputBg = MagziDesign.surface
+    static let inputBorder = MagziDesign.hairlineStrong
+    static let primaryText = MagziDesign.label
+    static let secondaryText = MagziDesign.labelSecondary
+    static let tertiaryText = MagziDesign.labelTertiary
+    static let userBubble = MagziDesign.mintSoft
+    static let toolBg = MagziDesign.surfaceSecondary
+    static let toolBorder = MagziDesign.hairline
+    static let accent = MagziDesign.mint
+    static let sendButton = MagziDesign.mint
+    static let sendButtonDisabled = MagziDesign.labelTertiary
 }
 
 // MARK: - System Resource Monitor
@@ -233,6 +233,7 @@ struct AIChatView: View {
     @ObservedObject private var configStore = ProviderConfigStore.shared
     @ObservedObject private var fontSettings = FontSettings.shared
     @ObservedObject private var deepLink = DeepLinkCoordinator.shared
+    @State private var showMagziHomecloud = false
     @Environment(\.dismiss) private var dismiss
     @State private var inputFocused: Bool = false
     @State private var inputHasSelection: Bool = false
@@ -473,9 +474,9 @@ struct AIChatView: View {
     /// Session being edited via the title-pill tap. Drives the SessionEditSheet.
     @State private var titlePillEditSession: ChatSession?
     /// Default chat title for sessions without a generated title. Sourced
-    /// from SOUL.md (`name`), falls back to "Minis". Refreshed on .soulMdChanged.
+    /// from SOUL.md (`name`), falls back to "Magzi". Refreshed on .soulMdChanged.
     @State private var soulName: String = SoulStore.cachedMetadata.name.isEmpty
-        ? "Minis" : SoulStore.cachedMetadata.name
+        ? "Magzi" : SoulStore.cachedMetadata.name
 
     /// True when any sheet or fullScreenCover is presented (suppress auto-focus to avoid keyboard bugs).
     private var hasOverlayPresented: Bool {
@@ -726,7 +727,7 @@ struct AIChatView: View {
             // Full-screen kernel boot overlay
             kernelBootOverlay
         }
-        .background(ChatColors.background)
+        .background(MagziDesign.appBackground)
         .onDrop(of: [.image, .movie, .fileURL, .data], isTargeted: $isDropTargeted) { providers in
             handleDropProviders(providers)
             return true
@@ -741,6 +742,10 @@ struct AIChatView: View {
             }
         }
         .environment(\.chatSessionId, vm.sessionId)
+        .safeAreaInset(edge: .top) { runtimeModeBanner }
+        .sheet(isPresented: $showMagziHomecloud) {
+            NavigationStack { MagziConnectView() }
+        }
         .modifier(NavBarStyleModifier(topSafeAreaInset: $topSafeAreaInset))
         .navigationBarTitleDisplayMode(.inline)
         // [T-ios-navbar-toolbar-host] The ENTIRE toolbar now lives inside an
@@ -770,6 +775,7 @@ struct AIChatView: View {
             })
             .equatable()
         )
+        .task { observeMagziRemoteEvents() }
         .sheet(item: $titlePillEditSession) { session in
             SessionEditSheet(session: session) { newTitle, newCategory in
                 Task {
@@ -800,7 +806,7 @@ struct AIChatView: View {
             if let msg = forcePullToast {
                 Text(msg)
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(MagziDesign.onAccent)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
                     .background(Color.accentColor, in: Capsule())
@@ -1765,6 +1771,12 @@ struct AIChatView: View {
             inputFocused = false
             showCamera = true
             minisLogger.info("[QuickAction] openCamera — showCamera=true")
+        case .sendPrompt(let text):
+            // Close the workflow first so a retry can't send the prompt twice.
+            QuickActionWorkflow.shared.markCoverPresented()
+            guard vm.messages.isEmpty, !vm.isProcessing else { return }
+            vm.inputText = text
+            performSend()
         }
     }
 
@@ -2208,6 +2220,43 @@ struct AIChatView: View {
         )
     }
 
+    private var currentRuntimeMode: MagziRuntimeMode { .local }
+
+    private var runtimeModeBanner: some View {
+        HStack(spacing: 10) {
+            MagziPill(title: "9router", systemImage: "sparkles", tint: MagziDesign.violet)
+            Text("Local iOS agent")
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(MagziDesign.secondary)
+            Spacer()
+            Button {
+                showMagziHomecloud = true
+            } label: {
+                Label("Magzi", systemImage: "cloud.fill")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(MagziDesign.text)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(MagziDesign.graphite, in: Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(MagziDesign.surface)
+        .overlay(alignment: .bottom) { MagziDesign.hairline.frame(height: 1) }
+    }
+
+    private func setRuntimeMode(_ mode: MagziRuntimeMode) async {
+        if vm.sessionId == nil { _ = await vm.ensureSessionReturningId() }
+        vm.setMagziRuntimeMode(.local)
+    }
+
+    private func observeMagziRemoteEvents() {
+        // Local chats stay on 9router; Magzi chat lives in MagziChatStore. Just keep the live socket warm.
+        MagziWebSocket.shared.connectIfPossible()
+    }
+
     private var titleView: some View {
         let display = SessionModelDisplay(store: configStore, draftGroupId: vm.initialGroupId)
         let modelName = display.displayName(for: vm.sessionId)
@@ -2227,7 +2276,7 @@ struct AIChatView: View {
         // when one exists (auto-generated or user-renamed). Tap opens the
         // same SessionEditSheet used from the home screen so users can
         // rename / re-categorize without leaving the chat. Falls back to
-        // the SOUL.md `name` (or "Minis") for draft sessions or before a
+        // the SOUL.md `name` (or "Magzi") for draft sessions or before a
         // title has been generated.
         let sessionTitle: String? = (titlePillSession?.title?.trimmingCharacters(in: .whitespacesAndNewlines))
             .flatMap { $0.isEmpty ? nil : $0 }
@@ -2264,7 +2313,7 @@ struct AIChatView: View {
         // 2026-05-20 tightening overlapped row 2 into the title's line box by
         // 8pt — more than the 13pt font's entire descender zone (~3.1pt), so
         // any title containing g/p/y/z visually fused with the model pill
-        // (only descender-less titles like "Minis" hid it). -3 keeps a ~2pt
+        // (only descender-less titles like "Magzi" hid it). -3 keeps a ~2pt
         // visible gap for descender titles. HEIGHT-NEUTRAL: the 5pt spent
         // here is reclaimed inside row 2 (provider-row bottom clearance
         // 4 → 1 and group vertical padding 3 → 2 on legacy), so the stack's
@@ -2322,7 +2371,7 @@ struct AIChatView: View {
                     .padding(.top, legacyLayout ? 0 : 2)
                     .onReceive(NotificationCenter.default.publisher(for: .soulMdChanged)) { _ in
                         let n = SoulStore.cachedMetadata.name
-                        soulName = n.isEmpty ? "Minis" : n
+                        soulName = n.isEmpty ? "Magzi" : n
                     }
             }
             .buttonStyle(.plain)
@@ -2406,7 +2455,7 @@ struct AIChatView: View {
                             // badge reads as an inline glyph, not a button.
                             Image(systemName: "bolt.fill")
                                 .font(.system(size: 5, weight: .bold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(MagziDesign.text)
                                 .frame(width: 9, height: 9)
                                 .background(Circle().fill(Color.orange))
                                 // Match the row text's descender clearance so
@@ -2593,7 +2642,7 @@ struct AIChatView: View {
                     || next?.title != titlePillSession?.title
                     || next?.category != titlePillSession?.category {
                     // Direct replace — animating the toolbar title makes the
-                    // old "Minis" string slide before the real title swaps
+                    // old "Magzi" string slide before the real title swaps
                     // in, which looks broken. SwiftUI's default crossfade
                     // for non-animated text changes is what we want.
                     titlePillSession = next
@@ -2962,10 +3011,10 @@ struct AIChatView: View {
             Divider()
             HStack {
                 Image(systemName: "eye")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(MagziDesign.secondary)
                 Text("Read-only session from another device")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(MagziDesign.secondary)
                 Spacer()
                 Button {
                     guard let sid = sessionId, let devId = remoteDeviceId else { return }
@@ -2990,7 +3039,7 @@ struct AIChatView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .background(.ultraThinMaterial)
+            .background(MagziDesign.graphite)
         }
     }
     #endif
@@ -3838,7 +3887,7 @@ struct AIChatView: View {
                         .tint(.yellow)
                     Text("Waiting for other tasks to complete...")
                         .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(MagziDesign.secondary)
                 }
                 .padding(.vertical, 8)
                 .frame(maxWidth: .infinity)
@@ -3913,7 +3962,7 @@ struct AIChatView: View {
                             .foregroundStyle(ChatColors.secondaryText)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
-                            .background(.ultraThinMaterial)
+                            .background(MagziDesign.graphite)
                             .clipShape(Capsule())
                     }
                     .padding(.top, 6)
@@ -5016,17 +5065,14 @@ private struct ComposerSurface: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content
-                .glassEffect(.regular, in: shape)
-                .clipShape(shape)
-        } else {
-            content
-                .background(shape.fill(ChatColors.inputBg))
-                .clipShape(shape)
-                .shadow(color: Color.black.opacity(0.12), radius: 8, x: 0, y: 2)
-                .shadow(color: Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0, alpha: 0.5) : UIColor(white: 0, alpha: 0) }), radius: 8, x: 0, y: -4)
-        }
+        content
+            .background(
+                shape
+                    .fill(MagziDesign.surface)
+                    .overlay(shape.strokeBorder(MagziDesign.hairlineStrong, lineWidth: 1))
+            )
+            .clipShape(shape)
+            .magziShadow(MagziDesign.Shadows.floating)
     }
 }
 
@@ -5204,7 +5250,7 @@ private struct ProviderImportSheet: View {
                     .multilineTextAlignment(.center)
                 Text(AppLocalized("This JSON file looks like an exported provider configuration. Import it as a new provider, or add it to the chat as a file attachment?"))
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(MagziDesign.secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -6262,17 +6308,13 @@ private struct SessionLockGateOverlay: View {
     private var gateView: some View {
         ZStack {
             Rectangle()
-                .fill(.regularMaterial)
+                .fill(MagziDesign.background.opacity(0.96))
                 .ignoresSafeArea()
-                .overlay {
-                    Color(UIColor.systemBackground).opacity(0.4)
-                        .ignoresSafeArea()
-                }
 
             VStack(spacing: 18) {
                 Image(systemName: "lock.fill")
                     .font(.system(size: 56, weight: .light))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(MagziDesign.secondary)
 
                 Text("This session is locked")
                     .font(.system(size: 18, weight: .semibold))
@@ -6281,7 +6323,7 @@ private struct SessionLockGateOverlay: View {
                      ? "Authentication failed. Tap to try again."
                      : "Tap to unlock with \(BiometricAuth.biometryDisplayName)")
                     .font(.system(size: 14))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(MagziDesign.secondary)
                     .multilineTextAlignment(.center)
 
                 Button {
@@ -6294,7 +6336,7 @@ private struct SessionLockGateOverlay: View {
                         .font(.system(size: 16, weight: .semibold))
                         .padding(.horizontal, 22).padding(.vertical, 10)
                         .background(.tint, in: Capsule())
-                        .foregroundStyle(.white)
+                        .foregroundStyle(MagziDesign.onAccent)
                 }
             }
             .padding(.horizontal, 32)
@@ -6494,7 +6536,7 @@ private struct SpeechLanguagePickerSheet: View {
                         .foregroundStyle(.primary)
                     Text(loc.identifier)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(MagziDesign.secondary)
                 }
                 Spacer()
                 if loc.identifier == speechManager.locale.identifier {
@@ -6548,7 +6590,7 @@ struct CompactSummarySheet: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { dismiss() } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(MagziDesign.secondary)
                     }
                 }
                 ToolbarItem(placement: .topBarLeading) {
@@ -6707,7 +6749,7 @@ private struct StatRow: View {
             }
             Spacer()
             Text(value)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(MagziDesign.secondary)
                 .monospacedDigit()
         }
     }

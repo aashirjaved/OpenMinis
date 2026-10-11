@@ -1552,6 +1552,9 @@ struct PastableTextView: UIViewRepresentable {
         tv.delegate = context.coordinator
         tv.font = UIFont.systemFont(ofSize: FontSettings.shared.scaledChatInput(16.5))
         tv.backgroundColor = .clear
+        tv.textColor = .label
+        tv.tintColor = UIColor(named: "AccentColor") ?? .systemTeal
+        tv.keyboardAppearance = .default
         if let maxHeightOverride { tv.maxHeight = maxHeightOverride }
         tv.isScrollEnabled = false
         tv.textContainerInset = .zero
@@ -1791,6 +1794,10 @@ struct PastableTextView: UIViewRepresentable {
             }
         }
 
+        tv.textColor = .label
+        tv.tintColor = UIColor(named: "AccentColor") ?? .systemTeal
+        tv.keyboardAppearance = .default
+
         // Keep font in sync with FontSettings
         let inputFont = UIFont.systemFont(ofSize: FontSettings.shared.scaledChatInput(16.5))
         if tv.font != inputFont {
@@ -1811,6 +1818,7 @@ struct PastableTextView: UIViewRepresentable {
         // Sync placeholder
         if let label = tv.viewWithTag(999) as? UILabel {
             label.isHidden = !text.isEmpty
+            label.textColor = .placeholderText
             if label.font != inputFont { label.font = inputFont }
             // [T-ios-composer-placeholder-rotation] Only the focus handler
             // picks a new entry. This runs on EVERY parent re-render (the

@@ -1,0 +1,103 @@
+import SwiftUI
+// Sim harness stubs for main-app pieces the Magzi folder touches.
+struct ContentView: View { var body: some View { MagziEmptyState(systemImage: "sparkles", title: "Ad-hoc agent", message: "Local agent on 9router (stubbed in harness)") } }
+struct MagziSettingsView: View { var body: some View { Text("Settings (stubbed)") } }
+@MainActor final class QuickActionRouter { static let shared = QuickActionRouter(); func startNewChat(sendingPrompt: String) {} }
+@main struct HarnessApp: App {
+    init() {
+        if let shot = ProcessInfo.processInfo.environment["MAGZI_TAB"] {
+            let map: [String: MagziRouter.Tab] = ["home": .home, "magzi": .magzi, "household": .household, "adhoc": .adhoc, "more": .more]
+            MagziRouter.shared.tab = map[shot] ?? .home
+        }
+    }
+    var body: some Scene { WindowGroup { HarnessRoot().task {
+        await MagziHub.shared.start()
+        if ProcessInfo.processInfo.environment["MAGZI_MOCK"] == "1", !MagziAuthStore.shared.isPaired {
+            MagziAuthStore.shared.serverURLString = "http://127.0.0.1:8767"
+            _ = try? await MagziAPI.shared.verifyLogin(email: "owner@example.com", code: "000000")
+            await MagziHub.shared.refresh()
+        }
+        // Real local daemon: plant the code first (scripts/magzi-dogfood/otp.py <state> <email>).
+        if let email = ProcessInfo.processInfo.environment["MAGZI_LOGIN_EMAIL"], MagziAuthStore.shared.user?.email != email {
+            MagziAuthStore.shared.signOut() // the sim keychain group is shared across the per-member bundles
+            MagziAuthStore.shared.serverURLString = ProcessInfo.processInfo.environment["MAGZI_SERVER"] ?? "http://127.0.0.1:8767"
+            _ = try? await MagziAPI.shared.verifyLogin(email: email, code: ProcessInfo.processInfo.environment["MAGZI_LOGIN_CODE"] ?? "424242")
+            await MagziHub.shared.refresh()
+        }
+        // Cockpit: request a code on the host (POST /api/login), read it from stub/outbox.jsonl, pass it here.
+        if let code = ProcessInfo.processInfo.environment["MAGZI_COCKPIT_CODE"] {
+            MagziCockpitAuth.shared.serverURLString = ProcessInfo.processInfo.environment["MAGZI_COCKPIT_SERVER"] ?? "http://127.0.0.1:8766"
+            try? await MagziCockpitAuth.shared.verify(code: code)
+        }
+        if let hh = ProcessInfo.processInfo.environment["MAGZI_HH"], let route = HhRoute.named(hh) {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            MagziRouter.shared.householdRoute = route
+        }
+        if let text = ProcessInfo.processInfo.environment["MAGZI_AUTOSEND"] {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            MagziRouter.shared.askMagzi(text, send: true)
+        }
+    } } }
+}
+struct MagziGatewaySettingsStub: View { var body: some View { Text("gateway settings (not in harness)") } }
+struct AboutView: View { var body: some View { Text("About (stubbed)") } }
+struct MagziGatewayModelsView: View { var body: some View { Text("Gateway models (stubbed)") } }
+enum MagziGateway { static var defaultModelId: String? { "cx/gpt-5.5" } }
+final class CrashReporter { static let shared = CrashReporter(); func appendLog(_ s: String) {} }
+
+struct HarnessRoot: View {
+    @ObservedObject var hub = MagziHub.shared
+    var body: some View {
+        if ProcessInfo.processInfo.environment["MAGZI_SCREEN"] != nil && hub.me == nil { ProgressView() } else { screen }
+    }
+    @ViewBuilder var screen: some View {
+        switch ProcessInfo.processInfo.environment["MAGZI_SCREEN"] {
+        case "capabilities": NavigationStack { MagziCapabilitiesView() }
+        case "me": NavigationStack { MagziMeView() }
+        case "admin": NavigationStack { MagziAdminView() }
+        case "ops": NavigationStack { MagziOpsView() }
+        case "bridge": BridgeHarnessView()
+        case "memory": NavigationStack { MeMemoryView() }
+        case "timeline": NavigationStack { MeTimelineView() }
+        case "week": NavigationStack { MeWeekView() }
+        case "places": NavigationStack { MePlacesView() }
+        case "activity": NavigationStack { MeActivityView() }
+        case "preferences": NavigationStack { MePreferencesView() }
+        case "privacy": NavigationStack { MePrivacyView() }
+        case "devices": NavigationStack { MeDevicesView() }
+        case "users": NavigationStack { MeAdminUsersView() }
+        case "pairing": NavigationStack { MeAdminPairingView() }
+        case "settings": NavigationStack { MagziGatewaySettingsStub() }
+        default: MagziRootView()
+        }
+    }
+}
+
+// MARK: Ad-hoc bridge harness — the real AIChatViewModel+MagziBridge.swift runs against these.
+struct AgentToolDefinition {
+    let name: String
+    init(name: String, description: String, parameters: [String: AgentToolParam], required: [String], propertyOrdering: [String]? = nil) { self.name = name }
+}
+struct AgentToolParam { init(type: AgentParamType, description: String, enumValues: [String]? = nil) {} }
+enum AgentParamType: String { case string, integer, boolean, number, array, object }
+@MainActor final class AIChatViewModel {
+    struct FileToolResult { let output: String; let success: Bool }
+}
+
+struct BridgeHarnessView: View {
+    @State private var log = "running bridge tools…"
+    var body: some View {
+        ScrollView { Text(log).font(.system(.footnote, design: .monospaced)).padding() }
+            .task {
+                let vm = AIChatViewModel()
+                var out = "tools offered: \(vm.makeMagziBridgeTools().map(\.name))\n\n"
+                let h = await vm.executeMagziBridgeTool(name: "magzi_household", argsJson: #"{"view":"bills"}"#)
+                out += "magzi_household(bills) ok=\(h.success)\n\(h.output.prefix(300))\n\n"
+                log = out + "magzi_ask… (waiting for Magzi)"
+                let a = await vm.executeMagziBridgeTool(name: "magzi_ask", argsJson: #"{"request":"Add bin bags to the shopping list, and tell me what is planned for dinner on Tuesday."}"#)
+                out += "magzi_ask ok=\(a.success)\n\(a.output)"
+                log = out
+                print("BRIDGE-RESULT\n" + out)
+            }
+    }
+}

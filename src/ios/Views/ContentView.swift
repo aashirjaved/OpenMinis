@@ -1,5 +1,23 @@
 import SwiftUI
 
+private extension View {
+    func eraseToAnyView() -> AnyView { AnyView(self) }
+}
+
+private extension Color {
+    static let magziInk = MagziDesign.background
+    static let magziPanel = MagziDesign.surface
+    static let magziCard = MagziDesign.surfaceSecondary
+    static let magziLine = MagziDesign.hairlineStrong
+    static let magziMint = MagziDesign.mint
+    static let magziBlue = MagziDesign.blue
+    static let magziViolet = MagziDesign.violet
+}
+
+private struct MagziHomeBackground: View {
+    var body: some View { MagziDesign.appBackground }
+}
+
 private let shareLog = AppLogger(category: "Share")
 private let draftLog = AppLogger(category: "DraftSession")
 
@@ -330,7 +348,7 @@ private struct SearchBarSurface: ViewModifier {
             content.glassEffect(.regular, in: .capsule)
         } else {
             content
-                .background(Color(UIColor.secondarySystemBackground))
+                .background(MagziDesign.graphite)
                 .clipShape(Capsule())
                 .shadow(color: .black.opacity(0.1), radius: 6, x: 0, y: 2)
         }
@@ -425,19 +443,7 @@ private struct FolderSurface: ViewModifier {
             //   doesn't apply, and the material keeps the container from
             //   reading as a dull solid slab. regularMaterial (the brighter
             //   tier; ultraThin ran too dark here before).
-            if kind == .lone {
-                if #available(iOS 26.0, *) {
-                    content.background(shape.fill(Self.sampledGlassColor))
-                } else {
-                    content.background(shape.fill(Color(UIColor.secondarySystemBackground)))
-                }
-            } else {
-                if #available(iOS 26.0, *) {
-                    content.background(shape.fill(.regularMaterial))
-                } else {
-                    content.background(shape.fill(Color(UIColor.secondarySystemBackground)))
-                }
-            }
+            content.background(shape.fill(MagziDesign.graphite))
         }
         .overlay {
             // Border: full hairline on the lone card (its existing look, sub-26
@@ -829,7 +835,7 @@ private struct FolderPickerSheet: View {
                                         .font(.subheadline)
                                     Text("Rename to something else, or tap to use it")
                                         .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(MagziDesign.secondary)
                                 }
                             } icon: {
                                 Image(systemName: "exclamationmark.triangle.fill")
@@ -884,7 +890,7 @@ private struct FolderPickerSheet: View {
                                         .fill(Color(UIColor.tertiarySystemFill))
                                         .frame(width: 40, height: 40)
                                     Image(systemName: "folder.badge.minus")
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(MagziDesign.secondary)
                                 }
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("No Group")
@@ -1345,10 +1351,9 @@ struct ContentView: View {
     /// when `sessions` changes (see .onChange below).
     @State private var sessionsByIdCache: [String: ChatSession] = [:]
     /// Soul name shown as the sidebar title. Sourced from SOUL.md, falls
-    /// back to "Minis". Refreshed whenever SoulStore posts .soulMdChanged.
-    @State private var soulName: String = SoulStore.cachedMetadata.name.isEmpty
-        ? "Minis" : SoulStore.cachedMetadata.name
-    /// Subtitle state shown under the "Minis" sidebar title. nil hides the
+    /// back to "Magzi". Refreshed whenever SoulStore posts .soulMdChanged.
+    @State private var soulName: String = "Magzi"
+    /// Subtitle state shown under the "Magzi" sidebar title. nil hides the
     /// row; otherwise it renders as small capsules per type or a single
     /// status string. Refreshed by a 5s timer.
     @State private var migrationSubtitle: SyncSubtitleState?
@@ -1673,79 +1678,13 @@ struct ContentView: View {
             handleNewChatRequest()
         }
         .onReceive(QuickActionWorkflow.shared.$state) { newState in
-            // Workflow advanced to pendingDispatch (either same-runloop
-            // because we were already home, or after markHome fired
-            // from a navigation change). Open the new session now.
-            if case .pendingDispatch = newState {
-                openSessionForPendingQuickAction()
-            }
+            handleQuickActionWorkflowState(newState)
         }
         .onAppear {
-            if quickActionRouter.newChatTrigger != consumedQuickActionTrigger {
-                consumedQuickActionTrigger = quickActionRouter.newChatTrigger
-                // Defer one runloop so the NavigationStack body has a
-                // chance to attach `$navigationPath` before we append to
-                // it — otherwise the append on a freshly-mounted stack
-                // can be lost.
-                DispatchQueue.main.async {
-                    handleNewChatRequest()
-                }
-            }
-            // The Appearance language picker wrote "pendingSettingsReopen"
-            // right before changing appLanguage, which forced the root
-            // `.id(appLanguage)` rebuild that just dropped + re-mounted us.
-            // Reopen the Settings sheet so the user lands back where they
-            // were instead of stranded on the chat list. SettingsSheet's
-            // own onAppear pushes the saved destination onto its navPath.
-            if UserDefaults.standard.string(forKey: "pendingSettingsReopen") != nil {
-                DispatchQueue.main.async {
-                    activeToolSheet = .settings
-                }
-            }
-            // [T-ios-bg-nav-push-watchdog] Backstop for the scenePhase flush.
-            // `.onChange(of: scenePhase)` only fires on a TRANSITION, so a
-            // deferral that happened before this view mounted — a cold launch
-            // straight into the background, or a root remount (the
-            // `.id(appLanguage)` rebuild above) — would leave the push stranded
-            // with no later transition to release it. Deferred one runloop for
-            // the same reason the quick-action path above is: the
-            // NavigationStack must have attached `$navigationPath` first.
-            DispatchQueue.main.async {
-                flushPendingBackgroundNavigation()
-            }
+            handleContentAppear()
         }
         .onReceive(NotificationCenter.default.publisher(for: .sessionDidCreate)) { note in
-            guard isWideLayout, let newId = note.object as? String else { return }
-            let noteDraftId = (note.userInfo as? [String: String])?["draftId"]
-            draftLog.info("🔑DRAFT sessionDidCreate realId=\(newId) noteDraftId=\(noteDraftId ?? "nil") selId=\(selectedSessionId ?? "nil") curReal=\(newSessionRealId ?? "nil") curDraft=\(activeDraftId ?? "nil")")
-            // Verify this notification came from the currently active draft.
-            // A late notification from a previous (now-destroyed) draft must be ignored.
-            guard let selId = selectedSessionId, Self.isNewSessionId(selId),
-                  noteDraftId == selId else {
-                draftLog.info("🔑DRAFT sessionDidCreate IGNORED (draftId mismatch or not a draft)")
-                // [T-ios-state-publish-offmain-crash] ChatStore (an actor) posts
-                // .sessionDidCreate/.sessionDidUpdate from its background
-                // executor; NotificationCenter delivers synchronously on that
-                // thread, so this onReceive closure can run off-main. A bare
-                // Task{} started here inherits the (background) execution context,
-                // so `sessions =` (a @State write) lands off-main → "Publishing
-                // changes from background threads" + AttributeGraph corruption of
-                // the [ChatSession]/[String:ChatSession] state it deep-compares,
-                // crashing in ChatSession.== / deinit during flushTransactions.
-                // This onReceive can be delivered off-main, so hop explicitly —
-                // refreshSessionList's @State writes must land on the main thread.
-                Task { @MainActor in
-                    refreshSessionList()
-                }
-                return
-            }
-            newSessionRealId = newId
-            activeDraftId = selId
-            draftLog.info("🔑DRAFT sessionDidCreate ACCEPTED newSessionRealId=\(newId) activeDraftId=\(selId)")
-            // [T-ios-state-publish-offmain-crash] force main-thread @State write
-            Task { @MainActor in
-                refreshSessionList()
-            }
+            handleSessionDidCreate(note)
         }
         .onReceive(
             // Throttle (not debounce): session-list updates are infrequent (one
@@ -1783,41 +1722,10 @@ struct ContentView: View {
             refreshSessionList()
         }
         .onReceive(NotificationCenter.default.publisher(for: .moveInputToSession)) { note in
-            guard let targetId = (note.userInfo as? [String: String])?["targetId"] else { return }
-            // Skip navigation if the target session is already visible
-            if isWideLayout {
-                guard selectedSessionId != targetId && newSessionRealId != targetId else { return }
-                // Wide layout replaces selection — no stack to worry about
-                openSession(targetId)
-            } else {
-                // [T-ios-moveto-transfer-race] No early-return when the target
-                // already reads as current: a swallowed push leaves
-                // `currentStackSessionId` set to a target that never appeared,
-                // and bailing here is exactly what made a retry do nothing.
-                // switchToSession is idempotent, so re-running it for a target
-                // that genuinely is on screen is harmless.
-                switchToSession(targetId)
-            }
+            handleMoveInputToSession(note)
         }
         .onReceive(NotificationCenter.default.publisher(for: .openSessionFromIntent)) { note in
-            guard let sessionId = (note.userInfo as? [String: String])?["sessionId"] else { return }
-            // [T-notification-tap-vs-launch-session] Warm path owns this
-            // navigation: drop the cold-launch buffer copy and stamp the
-            // handling time so an in-flight launch `.task` (the post can land
-            // during its `await listSessions()`) doesn't clobber the target
-            // session with the Launch Session default afterwards.
-            NotificationNavigationStore.shared.markHandled()
-            // Skip navigation if the target session is already visible
-            if isWideLayout {
-                guard selectedSessionId != sessionId && newSessionRealId != sessionId else { return }
-                openSession(sessionId)
-            } else {
-                // [T-ios-moveto-transfer-race] Same atomic replacement as the
-                // move path — the old animated-pop-then-delayed-push had the
-                // same swallowed-push failure mode here.
-                guard currentStackSessionId != sessionId else { return }
-                switchToSession(sessionId)
-            }
+            handleOpenSessionFromIntent(note)
         }
         .fullScreenCover(isPresented: $showTerminal) {
             NavigationStack {
@@ -1864,7 +1772,7 @@ struct ContentView: View {
         // is exactly how opening a backup while sitting in Settings did
         // nothing at all. Clearing it lets the incoming content surface.
         .onReceive(NotificationCenter.default.publisher(for: .dismissAllImmersivePresentations)) { _ in
-            if activeToolSheet != nil { activeToolSheet = nil }
+            handleDismissAllImmersivePresentations()
         }
         .sheet(item: $sessionToDelete) { session in
             DeleteConfirmSheet(info: $singleDeleteInfo, isLoading: false) {
@@ -1890,17 +1798,7 @@ struct ContentView: View {
             }
             .presentationDetents([.medium])
         }
-        .sheet(isPresented: $showDeleteConfirm, onDismiss: {
-            if deleteInfo == nil {
-                // Deletion was performed — reset selection mode after sheet is fully dismissed
-                isSelecting = false
-                selectedIds.removeAll()
-            } else {
-                // Cancelled — a pending delete-folder-with-sessions must not
-                // linger and attach itself to a later unrelated delete.
-                pendingDeleteFolderId = nil
-            }
-        }) {
+        .sheet(isPresented: $showDeleteConfirm, onDismiss: handleDeleteConfirmDismiss) {
             DeleteConfirmSheet(info: $deleteInfo, isLoading: isComputingDelete) {
                 deleteSelectedSessions()
                 showDeleteConfirm = false
@@ -1910,37 +1808,8 @@ struct ContentView: View {
         .sheet(isPresented: $showExportPreview) {
             ExportPreviewSheet(fileURL: exportFileURL, previewURL: exportPreviewURL, summary: exportSummary)
         }
-        .sheet(item: $folderPickerRequest, onDismiss: {
-            // Mirror the delete sheet's pattern (see the comment near
-            // computeDeleteInfo): selection state is reset only after the
-            // sheet is fully dismissed to avoid animation conflicts.
-            if folderMoveApplied {
-                folderMoveApplied = false
-                isSelecting = false
-                selectedIds.removeAll()
-            }
-        }) { req in
-            FolderPickerSheet(
-                items: folderPickerItems(),
-                sessionIds: Array(req.sessionIds),
-                anyFiled: req.anyFiled
-            ) { choice in
-                Task { @MainActor in
-                    switch choice {
-                    case .existing(let folderId):
-                        await ChatStore.shared.setFolder(folderId, forSessions: Array(req.sessionIds))
-                    case .create(let name, let desc):
-                        let folder = await ChatStore.shared.createFolder(name: name, desc: desc)
-                        await ChatStore.shared.setFolder(folder.id, forSessions: Array(req.sessionIds))
-                    case .removeFromFolder:
-                        await ChatStore.shared.setFolder(nil, forSessions: Array(req.sessionIds))
-                    }
-                    refreshSessionList()
-                }
-                if req.fromMultiSelect { folderMoveApplied = true }
-                folderPickerRequest = nil
-            }
-            .presentationDetents([.medium, .large])
+        .sheet(item: $folderPickerRequest, onDismiss: handleFolderPickerDismiss) { req in
+            folderPickerSheet(req)
         }
         .modifier(FolderAlertsModifier(
             folderToRename: $folderToRename,
@@ -1980,6 +1849,7 @@ struct ContentView: View {
                 }
             }
         ))
+        .eraseToAnyView()
         .overlay {
             if isExporting {
                 ZStack {
@@ -2002,15 +1872,15 @@ struct ContentView: View {
                         if let p = exportProgress, p.total > 0 {
                             Text(AppLocalized("Exporting… \(p.done) / \(p.total)"))
                                 .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(MagziDesign.secondary)
                         } else {
                             Text(AppLocalized("Exporting…"))
                                 .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(MagziDesign.secondary)
                         }
                     }
                     .padding(24)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                    .background(MagziDesign.graphite, in: RoundedRectangle(cornerRadius: 16))
                 }
                 .transition(.opacity)
                 .animation(.easeInOut(duration: 0.2), value: isExporting)
@@ -2550,17 +2420,15 @@ struct ContentView: View {
                     draftLog.info("🔑DRAFT detailView DISAPPEAR id=\(id)")
                 }
         } else {
-            VStack(spacing: 12) {
-                Image(systemName: "bubble.left.and.bubble.right")
-                    .font(.system(size: 48))
-                    .foregroundStyle(.secondary)
-                Text("No Conversation Selected")
-                    .font(.title3.bold())
-                Text("Select a conversation or start a new one")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
+            MagziEmptyState(
+                systemImage: "bubble.left.and.bubble.right",
+                title: AppLocalized("No Conversation Selected"),
+                message: AppLocalized("Select a conversation or start a new one"),
+                actionTitle: AppLocalized("New task"),
+                action: { openSession(Self.makeNewSessionId()) }
+            )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .magziScreenBackground()
         }
     }
 
@@ -2573,6 +2441,194 @@ struct ContentView: View {
     }
 
     /// Group sessions by date period for section display, with pinned sessions at the top.
+    private func handleDismissAllImmersivePresentations() {
+        if activeToolSheet != nil { activeToolSheet = nil }
+    }
+
+    private func handleFolderPickerDismiss() {
+        if folderMoveApplied {
+            folderMoveApplied = false
+            isSelecting = false
+            selectedIds.removeAll()
+        }
+    }
+
+    @ViewBuilder
+    private func folderPickerSheet(_ req: FolderPickerRequest) -> some View {
+        FolderPickerSheet(
+            items: folderPickerItems(),
+            sessionIds: Array(req.sessionIds),
+            anyFiled: req.anyFiled
+        ) { choice in
+            applyFolderPickerChoice(choice, request: req)
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func applyFolderPickerChoice(_ choice: FolderPickerSheet.Choice, request req: FolderPickerRequest) {
+        Task { @MainActor in
+            switch choice {
+            case .existing(let folderId):
+                await ChatStore.shared.setFolder(folderId, forSessions: Array(req.sessionIds))
+            case .create(let name, let desc):
+                let folder = await ChatStore.shared.createFolder(name: name, desc: desc)
+                await ChatStore.shared.setFolder(folder.id, forSessions: Array(req.sessionIds))
+            case .removeFromFolder:
+                await ChatStore.shared.setFolder(nil, forSessions: Array(req.sessionIds))
+            }
+            refreshSessionList()
+        }
+        if req.fromMultiSelect { folderMoveApplied = true }
+        folderPickerRequest = nil
+    }
+
+    private func handleDeleteConfirmDismiss() {
+        if deleteInfo == nil {
+            isSelecting = false
+            selectedIds.removeAll()
+        } else {
+            pendingDeleteFolderId = nil
+        }
+    }
+
+    private func handleContentAppear() {
+        if quickActionRouter.newChatTrigger != consumedQuickActionTrigger {
+            consumedQuickActionTrigger = quickActionRouter.newChatTrigger
+            DispatchQueue.main.async {
+                handleNewChatRequest()
+            }
+        }
+        if UserDefaults.standard.string(forKey: "pendingSettingsReopen") != nil {
+            DispatchQueue.main.async {
+                activeToolSheet = .settings
+            }
+        }
+        DispatchQueue.main.async {
+            flushPendingBackgroundNavigation()
+        }
+    }
+
+    private func handleQuickActionWorkflowState(_ newState: QuickActionWorkflow.State) {
+        if case .pendingDispatch = newState {
+            openSessionForPendingQuickAction()
+        }
+    }
+
+    private func handleSessionDidCreate(_ note: Notification) {
+        guard isWideLayout, let newId = note.object as? String else { return }
+        let noteDraftId = (note.userInfo as? [String: String])?["draftId"]
+        draftLog.info("🔑DRAFT sessionDidCreate realId=\(newId) noteDraftId=\(noteDraftId ?? "nil") selId=\(selectedSessionId ?? "nil") curReal=\(newSessionRealId ?? "nil") curDraft=\(activeDraftId ?? "nil")")
+        guard let selId = selectedSessionId, Self.isNewSessionId(selId), noteDraftId == selId else {
+            draftLog.info("🔑DRAFT sessionDidCreate IGNORED (draftId mismatch or not a draft)")
+            Task { @MainActor in
+                refreshSessionList()
+            }
+            return
+        }
+        newSessionRealId = newId
+        activeDraftId = selId
+        draftLog.info("🔑DRAFT sessionDidCreate ACCEPTED newSessionRealId=\(newId) activeDraftId=\(selId)")
+        Task { @MainActor in
+            refreshSessionList()
+        }
+    }
+
+    private func handleMoveInputToSession(_ note: Notification) {
+        guard let targetId = (note.userInfo as? [String: String])?["targetId"] else { return }
+        if isWideLayout {
+            guard selectedSessionId != targetId && newSessionRealId != targetId else { return }
+            openSession(targetId)
+        } else {
+            switchToSession(targetId)
+        }
+    }
+
+    private func handleOpenSessionFromIntent(_ note: Notification) {
+        guard let sessionId = (note.userInfo as? [String: String])?["sessionId"] else { return }
+        NotificationNavigationStore.shared.markHandled()
+        if isWideLayout {
+            guard selectedSessionId != sessionId && newSessionRealId != sessionId else { return }
+            openSession(sessionId)
+        } else {
+            guard currentStackSessionId != sessionId else { return }
+            switchToSession(sessionId)
+        }
+    }
+
+    private func performInitialLoadTask() async {
+        sessions = await ChatStore.shared.listSessions()
+        folders = await ChatStore.shared.listFolders()
+        let shareAlreadyHandled = shareCoordinator.bufferVersion > 0
+        let workflowActive: Bool = {
+            if case .idle = QuickActionWorkflow.shared.state { return false }
+            return true
+        }()
+        let quickActionPending = quickActionRouter.newChatTrigger != consumedQuickActionTrigger || workflowActive
+        shareLog.info("[Share] .task: hasPendingShare=\(shareCoordinator.hasPendingShare) launchScreen=\(launchScreen) sessions=\(sessions.count) bufferVersion=\(shareCoordinator.bufferVersion) shareAlreadyHandled=\(shareAlreadyHandled) quickActionPending=\(quickActionPending) workflowActive=\(workflowActive)")
+
+        if let notificationTarget = NotificationNavigationStore.shared.takePending() {
+            shareLog.info("[Share] .task: notification tap target=\(notificationTarget.prefix(8)) — overriding launchScreen logic")
+            var tx = Transaction()
+            tx.disablesAnimations = true
+            withTransaction(tx) { openSession(notificationTarget) }
+        } else if NotificationNavigationStore.shared.handledRecently {
+            shareLog.info("[Share] .task: notification navigation just handled — skipping launchScreen logic")
+        } else if quickActionPending {
+            shareLog.info("[Share] .task: quick action pending — deferring launchScreen logic to QuickActionRouter")
+        } else if shareAlreadyHandled {
+            shareLog.info("[Share] .task: share already handled by onChange — skipping launchScreen logic")
+        } else if shareCoordinator.hasPendingShare {
+            shareLog.info("[Share] .task: processing pending share")
+            processPendingShare()
+            shareLog.info("[Share] .task: buffer stored, bufferVersion=\(shareCoordinator.bufferVersion) buffer=\(shareCoordinator.pendingShareBuffer != nil)")
+            let target = Self.makeNewSessionId()
+            shareCoordinator.setBufferTarget(target)
+            shareLog.info("[Share] .task: cold launch — opening new session \(target.prefix(16)) for share")
+            var tx = Transaction()
+            tx.disablesAnimations = true
+            withTransaction(tx) { openSession(target) }
+        } else if CrashReporter.shared.shouldBypassSessionRestore {
+            CrashReporter.shared.clearCrashLoopFlag()
+            shareLog.warning("[Share] .task: crash-loop detected — skipping session restore, landing on the session list")
+        } else {
+            switch launchScreen {
+            case 1:
+                if let latest = sessions.first {
+                    var tx = Transaction()
+                    tx.disablesAnimations = true
+                    withTransaction(tx) { openSession(latest.id) }
+                }
+            case 2:
+                var tx = Transaction()
+                tx.disablesAnimations = true
+                withTransaction(tx) { openSession(Self.makeNewSessionId()) }
+            case 3:
+                break
+            default:
+                if !sessions.isEmpty,
+                   let latest = sessions.first,
+                   Date().timeIntervalSince(latest.updatedAt) > 15 * 60 {
+                    var tx = Transaction()
+                    tx.disablesAnimations = true
+                    withTransaction(tx) { openSession(Self.makeNewSessionId()) }
+                } else if isWideLayout, let latest = sessions.first {
+                    var tx = Transaction()
+                    tx.disablesAnimations = true
+                    withTransaction(tx) { openSession(latest.id) }
+                }
+            }
+        }
+
+        if isWideLayout, let sid = selectedSessionId,
+           let fid = sessions.first(where: { $0.id == sid })?.folderId,
+           collapsedFolderIds.contains(fid) {
+            toggleFolderCollapsed(fid)
+        }
+        didInitialLoad = true
+        fetchAlarmsIfNeeded()
+        await refreshRemoteDeviceSessions()
+    }
+
     private func groupedSessions(_ list: [ChatSession]) -> [(label: String, sessions: [ChatSession])] {
         let calendar = Calendar.current
         let now = Date()
@@ -3071,7 +3127,7 @@ struct ContentView: View {
         .padding(.trailing, 8)
         .frame(height: 48)
         .frame(maxWidth: 320)
-        .background(.ultraThinMaterial, in: Capsule())
+        .background(MagziDesign.graphite, in: Capsule())
         .overlay(Capsule().stroke(Color(UIColor.separator).opacity(0.5), lineWidth: 0.5))
         .shadow(color: Color.black.opacity(0.15), radius: 8, y: 2)
         .padding(.top, 8)
@@ -3184,7 +3240,7 @@ struct ContentView: View {
         // and can't drop a .soulMdChanged notification arriving during reconstruction.
         .onReceive(NotificationCenter.default.publisher(for: .soulMdChanged)) { _ in
             let n = SoulStore.cachedMetadata.name
-            soulName = n.isEmpty ? "Minis" : n
+            soulName = "Magzi"
         }
     }
 
@@ -3364,6 +3420,9 @@ struct ContentView: View {
 
         }
         .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(MagziHomeBackground())
+        .toolbarBackground(.hidden, for: .navigationBar)
         #if DEBUG
         // TEMPORARY scroll-phase markers to bracket the jitter window in the
         // log. Pair with the [ROWH] probe: a [ROWH] line appearing during
@@ -3456,7 +3515,7 @@ struct ContentView: View {
                                 .overlay {
                                     if regeneratingTitleSessionId == session.id {
                                         ZStack {
-                                            Color(.systemBackground).opacity(0.7)
+                                            Color.magziPanel.opacity(0.72)
                                             ProgressView()
                                         }
                                     }
@@ -3525,9 +3584,9 @@ struct ContentView: View {
                                                 .padding(.bottom, isLast ? 4 : 0)
                                             }
                                         } else {
-                                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            RoundedRectangle(cornerRadius: 22, style: .continuous)
                                                 .fill(isSessionHighlighted(session.id)
-                                                      ? Color(red: 183/255.0, green: 175/255.0, blue: 150/255.0).opacity(0.3)
+                                                      ? Color.magziMint.opacity(0.14)
                                                       : Color.clear)
                                                 .padding(.horizontal, 6)
                                                 .padding(.vertical, 2)
@@ -3555,6 +3614,9 @@ struct ContentView: View {
 
         }
         .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(MagziHomeBackground())
+        .toolbarBackground(.hidden, for: .navigationBar)
         .navigationSplitViewColumnWidth(min: 340, ideal: 380, max: 500)
         // [T-macos27-liquid-glass-navbar] See MacOS27GlassWorkaround. Applied to
         // the Mac sidebar List only; the iPhone compact list (the other branch
@@ -3648,7 +3710,7 @@ struct ContentView: View {
                 if migrationSubtitle != next { migrationSubtitle = next }
             } else {
                 // No active sync work — hide the subtitle entirely so the
-                // "Minis" title sits at its normal size.
+                // "Magzi" title sits at its normal size.
                 if migrationSubtitle != nil { migrationSubtitle = nil }
             }
         }
@@ -3677,7 +3739,7 @@ struct ContentView: View {
             .map { (label: $0.0, count: $0.1) }
     }
 
-    /// Tiny indicator next to the "Minis" title showing the sync state.
+    /// Tiny indicator next to the "Magzi" title showing the sync state.
     @ViewBuilder
     private func titleSyncIndicator(for state: SyncSubtitleState?) -> some View {
         switch state {
@@ -3694,7 +3756,7 @@ struct ContentView: View {
         case .waiting:
             Image(systemName: "clock")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(MagziDesign.secondary)
         }
     }
 
@@ -3705,24 +3767,24 @@ struct ContentView: View {
             case .paused:
                 Image(systemName: "pause.circle.fill")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(MagziDesign.secondary)
                 Text("Sync paused")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(MagziDesign.secondary)
             case .migrating(let pct, let byType):
                 Image(systemName: "arrow.triangle.2.circlepath")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(MagziDesign.secondary)
                 Text("\(pct)%")
                     .font(.caption2.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(MagziDesign.secondary)
                 ForEach(byType.indices, id: \.self) { i in
                     syncTypeChip(label: byType[i].label, count: byType[i].count)
                 }
             case .syncing(let byType):
                 Image(systemName: "arrow.triangle.2.circlepath")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(MagziDesign.secondary)
                 ForEach(byType.indices, id: \.self) { i in
                     syncTypeChip(label: byType[i].label, count: byType[i].count)
                 }
@@ -3732,14 +3794,14 @@ struct ContentView: View {
                     .foregroundStyle(.green)
                 Text("Up to date")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(MagziDesign.secondary)
             case .waiting:
                 Image(systemName: "clock")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(MagziDesign.secondary)
                 Text("Waiting")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(MagziDesign.secondary)
             }
         }
         .lineLimit(1)
@@ -3753,10 +3815,10 @@ struct ContentView: View {
         HStack(spacing: 3) {
             Text(label)
                 .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(MagziDesign.secondary)
             Text(formatCompact(count))
                 .font(.caption2.monospacedDigit())
-                .foregroundStyle(.secondary)
+                .foregroundStyle(MagziDesign.secondary)
         }
     }
 
@@ -3809,7 +3871,7 @@ struct ContentView: View {
                     if #available(iOS 17.0, *) { return SyncV2Bootstrap.isEnabled }
                     return false
                 }()
-                // Title text comes from SOUL.md (falls back to "Minis"). The
+                // Title text comes from SOUL.md (falls back to "Magzi"). The
                 // leading sync indicator floats as an overlay so it doesn't
                 // take layout space — title stays perfectly centered in the
                 // navigation bar regardless of whether the indicator is visible.
@@ -3827,13 +3889,16 @@ struct ContentView: View {
                 // attached here gets torn down and re-created constantly and can
                 // drop a .soulMdChanged notification that arrives during the gap.
                 // This Text now only READS `soulName`.
-                let titleLabel = Text(soulName)
-                    .font(.system(size: 18.5, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    // A custom SOUL name can be long, and the width claim below
-                    // hands this label the whole column — without a limit a long
-                    // name would wrap to two lines inside an inline bar or push
-                    // under the buttons. One line, shrink a little, then ellipse.
+                let titleLabel = HStack(spacing: 8) {
+                    Image("MagziLogo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 22, height: 22)
+                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    Text(soulName)
+                        .font(.system(size: 19, weight: .bold, design: .rounded))
+                        .foregroundStyle(MagziDesign.label)
+                }
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
                     .overlay(alignment: .leading) {
@@ -3908,7 +3973,7 @@ struct ContentView: View {
                 Button {
                     activeToolSheet = .settings
                 } label: {
-                    Image(systemName: "gear")
+                    Image(systemName: "slider.horizontal.3")
                 }
             }
         }
@@ -4522,25 +4587,26 @@ struct ContentView: View {
         let hasProviders = !providerStore.instances.isEmpty
         let hasGroups = !providerStore.modelGroups.isEmpty
 
-        return VStack(spacing: 32) {
-            Spacer()
-            // App icon / hero
-            Image(systemName: "sparkles")
-                .font(.system(size: 56))
-                .foregroundStyle(.tint)
-                .padding(.bottom, 4)
+        return ZStack {
+            MagziDesign.background
+                .ignoresSafeArea()
 
-            VStack(spacing: 8) {
-                Text("Welcome to Minis")
-                    .font(.title2.bold())
-                Text("Your first On-Device Agent is almost ready.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
+            VStack(spacing: 32) {
+                Spacer()
+                MagziIconBadge(systemImage: "sparkles", size: 56)
 
-            // Setup steps
-            VStack(spacing: 16) {
+                VStack(spacing: 10) {
+                    Text("Welcome to Magzi")
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .foregroundStyle(MagziDesign.text)
+                    Text("A private, high-performance agent for your home cloud, files, automations, and conversations.")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(MagziDesign.secondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
+                }
+
+                VStack(spacing: 14) {
                 // Step 1 – Add Provider
                 setupStep(
                     number: 1,
@@ -4599,9 +4665,10 @@ struct ContentView: View {
                 .accessibilityIdentifier("onboarding.restoreBackup")
             }
             Spacer()
+            }
+            .frame(maxHeight: .infinity)
+            .padding(.horizontal, 28)
         }
-        .frame(maxHeight: .infinity)
-        .padding(.horizontal, 32)
         .sheet(isPresented: $showAddProvider) {
             NavigationStack {
                 AddProviderView()
@@ -4646,27 +4713,33 @@ struct ContentView: View {
             HStack(spacing: 14) {
                 // Step indicator
                 ZStack {
-                    Circle()
-                        .fill(isDone ? Color.green : Color.accentColor)
-                        .frame(width: 32, height: 32)
+                    if isDone {
+                        Circle()
+                            .fill(MagziDesign.mint)
+                            .frame(width: 32, height: 32)
+                    } else {
+                        Circle()
+                            .strokeBorder(MagziDesign.hairlineStrong, lineWidth: 1.5)
+                            .frame(width: 32, height: 32)
+                    }
                     if isDone {
                         Image(systemName: "checkmark")
                             .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.white)
+                            .foregroundColor(MagziDesign.onAccent)
                     } else {
                         Text("\(number)")
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
-                            .foregroundColor(.white)
+                            .foregroundColor(MagziDesign.label)
                     }
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(isDone ? .secondary : .primary)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(isDone ? MagziDesign.labelSecondary : MagziDesign.label)
                     Text(subtitle)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(MagziDesign.labelSecondary)
                 }
 
                 Spacer()
@@ -4674,14 +4747,11 @@ struct ContentView: View {
                 if !isDone {
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(MagziDesign.tertiary)
                 }
             }
             .padding(14)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color(UIColor.secondarySystemGroupedBackground))
-            )
+            .background(MagziDesign.glass(cornerRadius: MagziDesign.Radius.card))
         }
         .buttonStyle(.plain)
         .disabled(isDone)
@@ -4880,7 +4950,7 @@ struct ContentView: View {
             Button { dismissSearch() } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(MagziDesign.secondary)
                     // [T-ios-search-bar-glass-hit-hole] The frame alone was not
                     // a tap target: with `.buttonStyle(.plain)` and no fill,
                     // hit-testing follows the DRAWN GLYPH, so only the ~13pt
@@ -4896,7 +4966,7 @@ struct ContentView: View {
         } else {
             Button { dismissSearch() } label: {
                 Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(MagziDesign.secondary)
                     .frame(width: 32, height: 44)
                     .contentShape(Rectangle())
             }
@@ -5106,7 +5176,7 @@ struct ContentView: View {
                         HStack(spacing: 8) {
                             Image(systemName: "magnifyingglass")
                                 .font(.system(size: 15, weight: .medium))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(MagziDesign.secondary)
                             TextField("Search chats...", text: $searchText)
                                 .textFieldStyle(.plain)
                                 .autocorrectionDisabled()
@@ -5164,12 +5234,12 @@ struct ContentView: View {
                     } label: {
                         Self.fabCircleSurface(
                             tint: nil,
-                            fallbackFill: Color(UIColor.secondarySystemBackground),
+                            fallbackFill: MagziDesign.graphite,
                             fallbackShadowOpacity: 0.15
                         ) {
                             Image(systemName: "magnifyingglass")
                                 .font(.system(size: 22, weight: .semibold))
-                                .foregroundStyle(Color(UIColor.label))
+                                .foregroundStyle(MagziDesign.text)
                         }
                             .modifier(FABGlassMorphID(namespace: fabGlassNamespace))
                     }
@@ -5344,7 +5414,7 @@ struct ContentView: View {
                     .overlay(alignment: .bottomTrailing) {
                         if group.isCollapsed && group.anyPaused {
                             ZStack {
-                                Circle().fill(Color(UIColor.systemBackground))
+                                Circle().fill(MagziDesign.surface)
                                     .frame(width: 16, height: 16)
                                 Image(systemName: "exclamationmark.circle.fill")
                                     .font(.system(size: 13))
@@ -5674,7 +5744,7 @@ struct ContentView: View {
             .disabled(selectedIds.isEmpty)
         }
         .padding(.vertical, 10)
-        .background(.ultraThinMaterial)
+        .background(MagziDesign.graphite)
     }
 
     /// Force-sync the given sessions: bumps each session, its messages,
@@ -6228,7 +6298,7 @@ struct ContentView: View {
                 done += 1
                 if msg.isToolResultOnly { continue }
 
-                let role = msg.role == .user ? "User" : "Minis"
+                let role = msg.role == .user ? "User" : "Magzi"
                 let time = timeFmt.string(from: msg.createdAt)
                 var parts: [String] = []
                 for part in msg.parts {
@@ -6325,10 +6395,10 @@ private struct DeleteConfirmSheet: View {
                                         HStack(spacing: 6) {
                                             Image(systemName: "doc")
                                                 .font(.caption)
-                                                .foregroundStyle(.secondary)
+                                                .foregroundStyle(MagziDesign.secondary)
                                             Text(name)
                                                 .font(.subheadline)
-                                                .foregroundStyle(.secondary)
+                                                .foregroundStyle(MagziDesign.secondary)
                                         }
                                     }
                                     if info.totalFileCount > info.fileNames.count {
@@ -6387,7 +6457,7 @@ private struct DeleteConfirmSheet: View {
                 .foregroundStyle(.primary)
             Text(value)
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(MagziDesign.secondary)
         }
     }
 }
@@ -6437,7 +6507,7 @@ private struct ExportPreviewSheet: View {
                             .padding(12)
                             .textSelection(.enabled)
                     }
-                    .background(Color(UIColor.secondarySystemBackground))
+                    .background(MagziDesign.graphite)
                 }
 
                 Divider()
@@ -6475,7 +6545,7 @@ private struct ExportPreviewSheet: View {
                     }
                 }
                 .padding(.vertical, 12)
-                .background(Color(UIColor.systemBackground))
+                .background(MagziDesign.surface)
             }
             .navigationTitle(AppLocalized("Export Preview"))
             .navigationBarTitleDisplayMode(.inline)
@@ -6542,14 +6612,14 @@ private struct ExportPreviewSheet: View {
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Color(UIColor.secondarySystemBackground))
+        .background(MagziDesign.graphite)
     }
 
     private func summaryRow(_ key: String, _ value: String) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(key)
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(MagziDesign.secondary)
             Spacer(minLength: 12)
             Text(value)
                 .font(.subheadline)
@@ -7080,12 +7150,15 @@ private struct SessionRow: View, Equatable {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 12) {
             // Provider icon with optional spinning/suspended ring
             providerIcon
-                .frame(width: 44, height: 44)
-                .background(iconBackgroundColor.opacity(isHighlighted ? 0.35 : 0.18))
-                .clipShape(Circle())
+                .frame(width: 46, height: 46)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(iconBackgroundColor.opacity(0.12))
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay {
                     if isSuspended {
                         SuspendedRing(color: .yellow)
@@ -7135,7 +7208,7 @@ private struct SessionRow: View, Equatable {
                 highlightedText(
                     session.title ?? "New Chat",
                     font: .system(size: fontSettings.scaledApp(16), weight: .semibold),
-                    color: Color(UIColor.label)
+                    color: MagziDesign.label
                 )
                 .lineLimit(1)
 
@@ -7148,14 +7221,14 @@ private struct SessionRow: View, Equatable {
                     highlightedText(
                         snippet,
                         font: .system(size: fontSettings.scaledApp(14)),
-                        color: Color(UIColor.secondaryLabel)
+                        color: MagziDesign.labelSecondary
                     )
                     .lineLimit(2)
                 } else {
                     highlightedText(
                         session.lastMessage ?? "No messages yet",
                         font: .system(size: fontSettings.scaledApp(14)),
-                        color: Color(UIColor.secondaryLabel)
+                        color: MagziDesign.labelSecondary
                     )
                     .lineLimit(1)
                 }
@@ -7177,24 +7250,42 @@ private struct SessionRow: View, Equatable {
 
             Spacer(minLength: 1)
 
-            VStack(alignment: .trailing, spacing: 4) {
-                // Date
+            VStack(alignment: .trailing, spacing: 6) {
+                MagziPill(
+                    title: MagziSessionRuntimeStore.shared.mode(for: session.id).title,
+                    systemImage: MagziSessionRuntimeStore.shared.mode(for: session.id).badgeSystemImage,
+                    tint: MagziSessionRuntimeStore.shared.mode(for: session.id) == .homecloud ? MagziDesign.mint : MagziDesign.violet
+                )
+                .scaleEffect(0.82)
+                .frame(width: 96, alignment: .trailing)
                 Text(relativeDate(session.updatedAt))
-                    .font(.system(size: fontSettings.scaledApp(13)))
-                    .foregroundStyle(Color(UIColor.tertiaryLabel))
+                    .font(.system(size: fontSettings.scaledApp(12), weight: .medium))
+                    .foregroundStyle(MagziDesign.tertiary)
                 if isVisuallyLocked {
                     Image(systemName: "lock.fill")
                         .font(.system(size: 10))
-                        .foregroundStyle(Color(UIColor.tertiaryLabel))
+                        .foregroundStyle(MagziDesign.tertiary)
                 } else if session.isPinned {
                     Image(systemName: "pin.fill")
                         .font(.system(size: 10))
-                        .foregroundStyle(Color(UIColor.tertiaryLabel))
+                        .foregroundStyle(MagziDesign.tertiary)
                 }
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.vertical, 14)
+        .background(
+            ZStack {
+                MagziDesign.glass(cornerRadius: MagziDesign.Radius.card)
+                if isHighlighted {
+                    RoundedRectangle(cornerRadius: MagziDesign.Radius.card, style: .continuous)
+                        .fill(MagziDesign.mintSoft)
+                }
+            }
+            .magziShadow(MagziDesign.Shadows.card)
+        )
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
         .contentShape(Rectangle())
         #if DEBUG
         // TEMPORARY height probe — confirms List self-sizing jitter source.
@@ -7212,7 +7303,7 @@ private struct SessionRow: View, Equatable {
     private func badgeCircle(icon: String, color: Color, iconSize: CGFloat = 9, size: CGFloat = 16) -> some View {
         Image(systemName: icon)
             .font(.system(size: iconSize, weight: .bold))
-            .foregroundStyle(.white)
+            .foregroundStyle(MagziDesign.text)
             .frame(width: size, height: size)
             .background(color)
             .clipShape(Circle())
@@ -7396,7 +7487,7 @@ private struct RemoteSessionRow: View {
                 .overlay(alignment: .bottomTrailing) {
                     Image(systemName: "icloud.fill")
                         .font(.system(size: 7, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(MagziDesign.text)
                         .frame(width: 16, height: 16)
                         .background(Color.blue)
                         .clipShape(Circle())
@@ -7660,7 +7751,7 @@ private struct FontScaleRow: View {
                 } label: {
                     Text("A")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(MagziDesign.secondary)
                 }
                 .buttonStyle(.plain)
 
@@ -7679,7 +7770,7 @@ private struct FontScaleRow: View {
                 } label: {
                     Text("A")
                         .font(.system(size: 22, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(MagziDesign.secondary)
                 }
                 .buttonStyle(.plain)
             }
@@ -7953,7 +8044,7 @@ private struct AppearanceSettingsView: View {
                                         .foregroundStyle(.primary)
                                     Text(LocalizedStringKey(option.subtitle))
                                         .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(MagziDesign.secondary)
                                 }
                                 Spacer()
                                 if appIconMode == option.id {
@@ -8002,7 +8093,7 @@ private struct AppearanceSettingsView: View {
                             } else {
                                 Image(systemName: "globe")
                                     .font(.title3)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(MagziDesign.secondary)
                                     .frame(width: 28)
                             }
                             Text(lang.name)
@@ -8147,11 +8238,31 @@ private struct SettingsSheet: View {
                         } icon: {
                             Image(systemName: "paintbrush.fill")
                                 .font(.system(size: 9))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(MagziDesign.text)
                                 .frame(width: 21, height: 21)
                                 .background(.indigo, in: Circle())
                         }
                     }
+                }
+
+                Section {
+                    NavigationLink {
+                        MagziConnectView()
+                    } label: {
+                        Label {
+                            Text("Homecloud Login")
+                        } icon: {
+                            Image(systemName: "cloud.fill")
+                                .font(.system(size: 9))
+                                .foregroundStyle(MagziDesign.text)
+                                .frame(width: 21, height: 21)
+                                .background(.mint, in: Circle())
+                        }
+                    }
+                } header: {
+                    Text("Magzi Homecloud")
+                } footer: {
+                    Text("Pair with private magzid over Tailscale. Local Agent Mode remains available.")
                 }
 
                 Section("Agent Runtime") {
@@ -8199,7 +8310,7 @@ private struct SettingsSheet: View {
                         } icon: {
                             Image(systemName: "puzzlepiece.extension")
                                 .font(.system(size: 9))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(MagziDesign.text)
                                 .frame(width: 21, height: 21)
                                 .background(.blue, in: Circle())
                         }
@@ -8212,7 +8323,7 @@ private struct SettingsSheet: View {
                         } icon: {
                             Image(systemName: "sparkles")
                                 .font(.system(size: 11))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(MagziDesign.text)
                                 .frame(width: 21, height: 21)
                                 .background(.pink, in: Circle())
                         }
@@ -8225,7 +8336,7 @@ private struct SettingsSheet: View {
                         } icon: {
                             Image(systemName: "brain.head.profile")
                                 .font(.system(size: 9))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(MagziDesign.text)
                                 .frame(width: 21, height: 21)
                                 .background(.purple, in: Circle())
                         }
@@ -8238,7 +8349,7 @@ private struct SettingsSheet: View {
                         } icon: {
                             Image(systemName: "square.stack.3d.up")
                                 .font(.system(size: 9))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(MagziDesign.text)
                                 .frame(width: 21, height: 21)
                                 .background(.teal, in: Circle())
                         }
@@ -8251,7 +8362,7 @@ private struct SettingsSheet: View {
                         } icon: {
                             Image(systemName: "terminal")
                                 .font(.system(size: 9))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(MagziDesign.text)
                                 .frame(width: 21, height: 21)
                                 .background(.green, in: Circle())
                         }
@@ -8267,7 +8378,7 @@ private struct SettingsSheet: View {
                         } icon: {
                             Image(systemName: "archivebox")
                                 .font(.system(size: 9))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(MagziDesign.text)
                                 .frame(width: 21, height: 21)
                                 .background(.blue, in: Circle())
                         }
@@ -8280,7 +8391,7 @@ private struct SettingsSheet: View {
                         } icon: {
                             Image(systemName: "folder.fill.badge.person.crop")
                                 .font(.system(size: 9))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(MagziDesign.text)
                                 .frame(width: 21, height: 21)
                                 .background(.green, in: Circle())
                         }
@@ -8293,7 +8404,7 @@ private struct SettingsSheet: View {
                         } icon: {
                             Image(systemName: "externaldrive.badge.plus")
                                 .font(.system(size: 9))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(MagziDesign.text)
                                 .frame(width: 21, height: 21)
                                 .background(.orange, in: Circle())
                         }
@@ -8309,7 +8420,7 @@ private struct SettingsSheet: View {
                             } icon: {
                                 Image(systemName: "icloud")
                                     .font(.system(size: 9))
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(MagziDesign.text)
                                     .frame(width: 21, height: 21)
                                     .background(.cyan, in: Circle())
                             }
@@ -8328,7 +8439,7 @@ private struct SettingsSheet: View {
                             // rather than a one-way export.
                             Image(systemName: "arrow.triangle.2.circlepath")
                                 .font(.system(size: 9))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(MagziDesign.text)
                                 .frame(width: 21, height: 21)
                                 .background(.indigo, in: Circle())
                         }
@@ -8344,7 +8455,7 @@ private struct SettingsSheet: View {
                         } icon: {
                             Image(systemName: "lock.shield")
                                 .font(.system(size: 9))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(MagziDesign.text)
                                 .frame(width: 21, height: 21)
                                 .background(.red, in: Circle())
                         }
@@ -8360,7 +8471,7 @@ private struct SettingsSheet: View {
                                 // devices showed a Face ID glyph here before.
                                 Image(systemName: BiometricAuth.biometryIconName)
                                     .font(.system(size: 11))
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(MagziDesign.text)
                                     .frame(width: 21, height: 21)
                                     .background(.teal, in: Circle())
                             }
@@ -8377,7 +8488,7 @@ private struct SettingsSheet: View {
                         } icon: {
                             Image(systemName: "doc.text")
                                 .font(.system(size: 9))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(MagziDesign.text)
                                 .frame(width: 21, height: 21)
                                 .background(.gray, in: Circle())
                         }
@@ -8389,11 +8500,11 @@ private struct SettingsSheet: View {
                         AboutView()
                     } label: {
                         Label {
-                            Text("About Minis")
+                            Text("About Magzi")
                         } icon: {
                             Image(systemName: "info")
                                 .font(.system(size: 9))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(MagziDesign.text)
                                 .frame(width: 21, height: 21)
                                 .background(.indigo, in: Circle())
                         }
@@ -8404,7 +8515,7 @@ private struct SettingsSheet: View {
                         } icon: {
                             Image(systemName: "hand.raised")
                                 .font(.system(size: 9))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(MagziDesign.text)
                                 .frame(width: 21, height: 21)
                                 .background(.teal, in: Circle())
                         }
@@ -8417,7 +8528,7 @@ private struct SettingsSheet: View {
                         } icon: {
                             Image(systemName: "bubble.left.and.bubble.right.fill")
                                 .font(.system(size: 9))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(MagziDesign.text)
                                 .frame(width: 21, height: 21)
                                 .background(.indigo, in: Circle())
                         }
@@ -8624,7 +8735,7 @@ private struct SettingsSheet: View {
         components.scheme = "mailto"
         components.path = "dev@openminis.app"
         components.queryItems = [
-            URLQueryItem(name: "subject", value: "Minis Feedback"),
+            URLQueryItem(name: "subject", value: "Magzi Feedback"),
             URLQueryItem(name: "body", value: body),
         ]
         return components.url
@@ -8762,10 +8873,10 @@ private struct ForceSyncToastBanner: View {
         HStack(spacing: 10) {
             Image(systemName: "icloud.and.arrow.up")
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(MagziDesign.text)
             Text(text)
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(.white)
+                .foregroundStyle(MagziDesign.text)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
         }

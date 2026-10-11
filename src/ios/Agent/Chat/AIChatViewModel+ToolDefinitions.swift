@@ -202,6 +202,7 @@ extension AIChatViewModel {
             ))
         }
 
+        tools += makeMagziBridgeTools()
         // [T-tools-granular-switches] Settings › Tools › Browser Use off ⇒
         // browser_use is not in the schema at all (it is declared in the base
         // list above so its position is unchanged when on). A helper inherits

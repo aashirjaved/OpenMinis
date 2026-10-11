@@ -146,3 +146,11 @@ deps/lame-3.100/**/.deps/
 # not a vendored binary — same treatment as the iOS Rclone.xcframework it is
 # built alongside (deps/build_rclone_ios.sh).
 src/android/app/libs/rclone.aar
+
+# Local provider secrets (copy from ProviderCustomization.xcconfig.example)
+src/ios/Configs/ProviderCustomization.xcconfig
+
+# Local device logs, knowledge graph, editor backups
+build-logs/
+graphify-out/
+*.localhack.bak

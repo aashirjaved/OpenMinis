@@ -70,28 +70,26 @@ struct AboutView: View {
 
     var body: some View {
         List {
-            // MARK: - Project Info
             Section {
-                VStack(spacing: 8) {
-                    if let icon = UIImage(named: "AppIcon60x60") ?? UIImage(named: "AppIcon") {
-                        Image(uiImage: icon)
-                            .resizable()
-                            .frame(width: 80, height: 80)
-                            .clipShape(RoundedRectangle(cornerRadius: 18))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 18)
-                                    .stroke(Color(UIColor.separator), lineWidth: 0.5)
-                            )
-                    }
-                    Text("Minis")
-                        .font(.title2.bold())
+                VStack(spacing: 12) {
+                    Image("MagziLogo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 92, height: 92)
+                        .padding(14)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                .stroke(Color.accentColor.opacity(0.28), lineWidth: 1)
+                        )
+                    Text("Magzi")
+                        .font(.system(size: 30, weight: .bold, design: .rounded))
                     Text("Version \(appVersion)")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     Text("Built \(buildDate)")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
-                        // Selectable so it can be copied into a bug report.
                         .textSelection(.enabled)
                     // [T-env-diagnostic-line] Sits with the build date because
                     // it answers the same question — "what exactly is running?"
@@ -100,12 +98,13 @@ struct AboutView: View {
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                         .textSelection(.enabled)
-                    Text("Minis is Your Fully Local, Fully Private On-Device Agent.")
-                        .font(.subheadline)
+                    Text("Private agent. Clean interface. Serious capability.")
+                        .font(.subheadline.weight(.medium))
                         .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
+                .padding(.vertical, 18)
                 .listRowBackground(Color.clear)
             }
 

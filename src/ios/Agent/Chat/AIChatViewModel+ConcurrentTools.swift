@@ -919,6 +919,13 @@ extension AIChatViewModel {
             toolOutput = memResult.output
             toolSuccess = memResult.success
 
+        case let name where Self.magziBridgeToolNames.contains(name):
+            let bridgeResult = await executeMagziBridgeTool(name: name, argsJson: argsJson)
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = bridgeResult.output
+            }
+            toolOutput = bridgeResult.output
+            toolSuccess = bridgeResult.success
         case SubAgentDefinition.toolName:
             // [T-agents-debug-only] A refusal in the sub-agent result dialect,
             // so HelperBlockInfo renders the block as "Rejected" (a plain
