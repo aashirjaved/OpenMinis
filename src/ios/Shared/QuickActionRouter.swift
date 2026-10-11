@@ -27,9 +27,20 @@ private let logger = AppLogger(category: "QuickAction")
 
 /// One-shot action consumed by `AIChatView` when a new chat opens from
 /// a Home Screen shortcut.
-enum ChatLaunchAction: Equatable {
+enum ChatLaunchAction: Equatable, CustomStringConvertible {
     case startVoice
     case openCamera
+    /// Send this text as the new chat's first user message.
+    case sendPrompt(String)
+
+    /// Keeps prompt text out of the workflow logs.
+    var description: String {
+        switch self {
+        case .startVoice: return "startVoice"
+        case .openCamera: return "openCamera"
+        case .sendPrompt(let text): return "sendPrompt(\(text.count) chars)"
+        }
+    }
 }
 
 @MainActor
@@ -109,6 +120,18 @@ final class QuickActionRouter: ObservableObject {
             logger.warning("unknown shortcut type: \(shortcutItem.type)")
             return false
         }
+    }
+
+    /// Open a new chat (default model group) and send `prompt` as its first
+    /// message, via the same workflow the Voice / Camera shortcuts use.
+    func startNewChat(sendingPrompt prompt: String) {
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            QuickActionWorkflow.shared.reset(reason: "newChat with empty prompt")
+        } else {
+            QuickActionWorkflow.shared.start(.sendPrompt(trimmed))
+        }
+        postNewChat()
     }
 
     private func postNewChat() {

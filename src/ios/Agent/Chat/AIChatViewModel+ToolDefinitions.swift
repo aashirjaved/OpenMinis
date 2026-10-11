@@ -202,6 +202,8 @@ extension AIChatViewModel {
             ))
         }
 
+        tools += makeMagziBridgeTools()
+
         return tools
     }
 

@@ -224,6 +224,7 @@ final class ProviderConfigStore: ObservableObject {
         self.loadDegradation = loaded.degradation
         self.lastSavedSnapshot = self.config
         if loaded.degradation == .none {
+            ensureLocalDefaultProviderIfConfigured()
             ensureVoiceTemplateModels()
         } else {
             registerDegradedRecovery()
@@ -296,6 +297,7 @@ final class ProviderConfigStore: ObservableObject {
                 let (deduped, prunedAtLoad) = Self.dedupeEntriesByModel(fresh)
                 self.config = deduped
                 self.lastSavedSnapshot = deduped
+                self.ensureLocalDefaultProviderIfConfigured()
                 // [T-provider-entry-composite-key] Build the legacyUuid map from
                 // the local entries (each entry's random uuid → its composite
                 // key), then normalize any group/binding/agent-loop reference
@@ -406,6 +408,106 @@ final class ProviderConfigStore: ObservableObject {
         }
     }
 
+    private func ensureLocalDefaultProviderIfConfigured() {
+        let label = ProviderCustomizationGenerated.localDefaultProviderLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        let baseURL = ProviderCustomizationGenerated.localDefaultProviderBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let modelId = ProviderCustomizationGenerated.localDefaultProviderModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !label.isEmpty, !baseURL.isEmpty, !modelId.isEmpty else { return }
+
+        let instanceId = "local-default-9router"
+        let groupId = "local-default-9router-group"
+        let now = Date()
+        var changed = false
+
+        if let idx = config.instances.firstIndex(where: { $0.id == instanceId }) {
+            var inst = config.instances[idx]
+            if inst.label != label { inst.label = label; changed = true }
+            if inst.customBaseURL != baseURL { inst.customBaseURL = baseURL; changed = true }
+            if inst.appendV1Suffix { inst.appendV1Suffix = false; changed = true }
+            if !inst.isEnabled { inst.isEnabled = true; changed = true }
+            config.instances[idx] = inst
+        } else if !config.instances.contains(where: { $0.customBaseURL == baseURL && $0.label == label }) {
+            config.instances.append(ProviderInstance(
+                id: instanceId,
+                label: label,
+                providerType: .openAI,
+                credentialType: .apiKey,
+                isEnabled: true,
+                customBaseURL: baseURL,
+                appendV1Suffix: false
+            ))
+            changed = true
+        }
+
+        let apiKey = ProviderCustomizationGenerated.localDefaultProviderAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !apiKey.isEmpty, ProviderKeychainHelper.loadAPIKey(instanceId: instanceId) != apiKey {
+            ProviderKeychainHelper.saveAPIKey(apiKey, instanceId: instanceId)
+        }
+
+        let entryId = "\(instanceId)/\(modelId)"
+        // Only seed the build-time model while the 9router group has no live members; once the
+        // user picks gateway models (Magzi Settings → Ad-hoc gateway), keep their entries and order.
+        let liveEntryIds = Set(config.modelEntries.map(\.id))
+        let groupHasLiveMembers = config.modelGroups.first(where: { $0.id == groupId })?
+            .memberEntryIds.contains(where: liveEntryIds.contains) ?? false
+        if !groupHasLiveMembers, !liveEntryIds.contains(entryId) {
+            config.modelEntries.append(ModelEntry(
+                providerInstanceId: instanceId,
+                model: LLMModel(
+                    id: modelId,
+                    displayName: modelId,
+                    provider: ProviderType.openAI.displayName,
+                    modalityOverride: .textOnly,
+                    supportsReasoning: true
+                ),
+                isCustom: true,
+                userModifiedAt: now
+            ))
+            changed = true
+        }
+
+        if let idx = config.modelGroups.firstIndex(where: { $0.id == groupId }) {
+            var group = config.modelGroups[idx]
+            if group.name != label { group.name = label; changed = true }
+            if !groupHasLiveMembers { group.memberEntryIds = [entryId]; group.addedMembers[entryId] = now; changed = true }
+            if group.strategy != .fallback { group.strategy = .fallback; changed = true }
+            if group.fallbackStrategy != .always { group.fallbackStrategy = .always; changed = true }
+            config.modelGroups[idx] = group
+        } else {
+            config.modelGroups.append(ModelGroup(
+                id: groupId,
+                name: label,
+                memberEntryIds: [entryId],
+                strategy: .fallback,
+                fallbackStrategy: .always,
+                defaultThinkingLevel: .high,
+                addedMembers: [entryId: now]
+            ))
+            changed = true
+        }
+
+        // Bind new sessions to 9router once (first seed), or when the default is missing/dangling.
+        // After that, respect a different default the user picked.
+        let seededKey = "magzi.9router.defaultGroupSeeded"
+        let defaultDangling = config.defaultPrimaryGroupId.map { id in !config.modelGroups.contains(where: { $0.id == id }) } ?? true
+        if config.defaultPrimaryGroupId != groupId,
+           defaultDangling || !UserDefaults.standard.bool(forKey: seededKey) {
+            config.defaultPrimaryGroupId = groupId
+            changed = true
+        }
+        UserDefaults.standard.set(true, forKey: seededKey)
+        if config.modelEntries.contains(where: { $0.id == entryId }), !config.agentLoopModelEntryIds.contains(entryId) {
+            config.agentLoopModelEntryIds.append(entryId)
+            changed = true
+        }
+        if !config.agentLoopGroupIds.contains(groupId) {
+            config.agentLoopGroupIds.append(groupId)
+            changed = true
+        }
+
+        if changed { save() }
+    }
+
     private func recoverFromDegradedLoad() {
         guard loadDegradation != .none else { return }
         let reloaded = Self.loadGuarded(from: fileURL)
@@ -414,6 +516,7 @@ final class ProviderConfigStore: ObservableObject {
             loadDegradation = .none
             config = reloaded.config
             lastSavedSnapshot = reloaded.config
+            ensureLocalDefaultProviderIfConfigured()
             ensureVoiceTemplateModels()
             objectWillChange.send()
             logger.info("[RebootGuard] recovered provider config after unlock — instances=\(reloaded.config.instances.count) entries=\(reloaded.config.modelEntries.count) groups=\(reloaded.config.modelGroups.count)")

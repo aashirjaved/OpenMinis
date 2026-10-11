@@ -1,25 +1,25 @@
 import AppIntents
 import Foundation
 
-private let logger = AppLogger(category: "AskMinisIntent")
+private let logger = AppLogger(category: "AskMagziIntent")
 
-/// Siri-facing "ask Minis" entry point. Unlike `SendPromptIntent` (which runs
+/// Siri-facing "ask Magzi" entry point. Unlike `SendPromptIntent` (which runs
 /// headless with `openAppWhenRun = false` for Shortcuts automations), this
 /// intent OPENS the app and routes to the session so the user lands in the live
-/// conversation — matching the "Hey Siri, ask Minis to …" experience.
+/// conversation — matching the "Hey Siri, ask Magzi to …" experience.
 ///
 /// It reuses the exact normal send pipeline (`AIChatViewModel.send()`) and the
 /// existing `.openSessionFromIntent` navigation path — no separate agent logic.
 /// New session when `session` is nil; follow-up when a `SessionEntity` is given.
-struct AskMinisIntent: AppIntent {
-    static var title: LocalizedStringResource = "Ask Minis"
-    static var description = IntentDescription("Opens Minis, sends your prompt, and shows the conversation. Starts a new session, or continues an existing one when you pick a session.")
+struct AskMagziIntent: AppIntent {
+    static var title: LocalizedStringResource = "Ask Magzi"
+    static var description = IntentDescription("Opens Magzi, sends your prompt, and shows the conversation. Starts a new session, or continues an existing one when you pick a session.")
 
     // Open the app and land in the conversation (the Siri experience). The send
     // itself still goes through the normal in-app pipeline.
     static var openAppWhenRun = true
 
-    @Parameter(title: "Prompt", requestValueDialog: "What would you like to ask Minis?")
+    @Parameter(title: "Prompt", requestValueDialog: "What would you like to ask Magzi?")
     var prompt: String
 
     @Parameter(title: "Session", description: "Existing session to continue. Leave empty to start a new session.")
@@ -36,12 +36,12 @@ struct AskMinisIntent: AppIntent {
         var eagerArmed = false
         if !eagerInitialSid.isEmpty {
             eagerArmed = BackgroundKeepAliveManager.shared.armEagerlyForShortcut(
-                sessionId: eagerInitialSid, caller: "AskMinisIntent").armed
+                sessionId: eagerInitialSid, caller: "AskMagziIntent").armed
         }
         defer {
             if let placeholder = placeholderSid, eagerArmed {
                 SessionActivityTracker.shared.setInactive(placeholder,
-                    source: "AskMinisIntent.eager.cleanupDefer")
+                    source: "AskMagziIntent.eager.cleanupDefer")
             }
         }
 
@@ -58,9 +58,9 @@ struct AskMinisIntent: AppIntent {
             await vm.ensureSessionReturningId()
             if let placeholder = placeholderSid, let realSid = vm.sessionId {
                 BackgroundKeepAliveManager.shared.armEagerlyForShortcut(
-                    sessionId: realSid, caller: "AskMinisIntent.swap")
+                    sessionId: realSid, caller: "AskMagziIntent.swap")
                 SessionActivityTracker.shared.setInactive(placeholder,
-                    source: "AskMinisIntent.eager.placeholderSwap")
+                    source: "AskMagziIntent.eager.placeholderSwap")
             }
         }
 
@@ -88,6 +88,6 @@ struct AskMinisIntent: AppIntent {
             )
         }
 
-        return .result(dialog: "On it — opening Minis.")
+        return .result(dialog: "On it — opening Magzi.")
     }
 }

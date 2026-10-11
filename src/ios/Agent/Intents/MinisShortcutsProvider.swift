@@ -13,20 +13,20 @@ import AppIntents
 @available(iOS 17.0, *)
 struct MinisShortcutsProvider: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
-        // Siri-facing "ask Minis" entry — opens the app and lands in the
+        // Siri-facing "ask Magzi" entry — opens the app and lands in the
         // conversation. Note: iOS App Intents cannot capture free-form trailing
         // text from the phrase itself (e.g. "…the weather today"); Siri collects
         // the prompt via the parameter's requestValueDialog follow-up. The
         // phrases below are the invocation triggers, not the prompt.
         AppShortcut(
-            intent: AskMinisIntent(),
+            intent: AskMagziIntent(),
             phrases: [
                 "Ask \(.applicationName)",
                 "Ask \(.applicationName) a question",
                 "Talk to \(.applicationName)",
                 "New \(.applicationName) chat",
             ],
-            shortTitle: "Ask Minis",
+            shortTitle: "Ask Magzi",
             systemImageName: "sparkles"
         )
         AppShortcut(

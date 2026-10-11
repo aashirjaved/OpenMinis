@@ -2235,6 +2235,10 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             return
         }
 
+        // Normal chat is always the local iOS agent using the configured provider
+        // stack (seeded to 9router). Homecloud Magzi is a separate surface; do
+        // not hijack sends into the scaffolded mobile API from ordinary chats.
+
         // Don't stop TTS here — let the previous reply finish playing. The stream
         // handler will clear the queue on the FIRST textDelta of the new reply, so
         // the old audio plays until actual new content starts arriving.

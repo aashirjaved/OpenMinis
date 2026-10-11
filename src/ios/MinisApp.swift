@@ -161,7 +161,7 @@ struct MinisApp: App {
         Bundle.setLanguage(lang.isEmpty ? nil : lang)
         // [T-ios-soul-name-sidebar-stale] Pre-load cachedMetadata synchronously so
         // ContentView's `@State soulName` gets the real SOUL.md name on its very
-        // first render instead of the `.default` stub ("Minis"). Without this the
+        // first render instead of the `.default` stub ("Magzi"). Without this the
         // @State initializer (evaluated at ContentView instantiation, before any
         // .onAppear refresh) locks the sidebar title to the default even when the
         // user set a custom name. refreshCache() only reads the tiny SOUL.md file.
@@ -184,7 +184,7 @@ struct MinisApp: App {
     var body: some Scene {
         WindowGroup {
             ZStack {
-                ContentView()
+                MagziRootView()
                     .overlay(alignment: .top) {
                         BackgroundInterruptionBanner()
                     }
@@ -199,6 +199,7 @@ struct MinisApp: App {
                 .onReceive(SessionLockStore.shared.$appIsLocked) { locked in
                     guard !locked, let url = pendingURLWhileLocked else { return }
                     pendingURLWhileLocked = nil
+                    if MagziRouter.shared.handle(url: url) { return }
                     if BackupOpenRouter.handle(url) {
                         // .minisbak → restore flow, not the attachment pipeline.
                     } else if ExternalFileImporter.canIngest(url) {
@@ -283,6 +284,7 @@ struct MinisApp: App {
                         pendingURLWhileLocked = url
                         return
                     }
+                    if MagziRouter.shared.handle(url: url) { return }
                     if BackupOpenRouter.handle(url) {
                         // .minisbak → restore flow, not the attachment pipeline.
                     } else if ExternalFileImporter.canIngest(url) {
@@ -657,7 +659,7 @@ struct MinisApp: App {
 
     private static let fileProviderDomain = NSFileProviderDomain(
         identifier: NSFileProviderDomainIdentifier("com.openminis.app.files"),
-        displayName: "Minis"
+        displayName: "Magzi"
     )
 
     /// Bumped when we need to force-rebuild the FileProvider domain on next launch
@@ -1045,9 +1047,9 @@ struct MinisApp: App {
     private static func migrateSharedDirToAppGroup() {
         let fm = FileManager.default
         let library = fm.urls(for: .libraryDirectory, in: .userDomainMask).first!
-        let container = fm.containerURL(forSecurityApplicationGroupIdentifier: "group.com.openminis.app")!
+        let container = fm.containerURL(forSecurityApplicationGroupIdentifier: "group.com.openminis.app")
 
-        let migrations: [(source: URL, dest: URL, label: String)] = [
+        var migrations: [(source: URL, dest: URL, label: String)] = [
             // Legacy Library/MinisChat/shared → new shared
             (library.appendingPathComponent("MinisChat/shared", isDirectory: true),
              AIChatViewModel.minisSharedPersistentDir, "shared"),
@@ -1057,10 +1059,14 @@ struct MinisApp: App {
             // Legacy Library/MinisChat/skills → new skills
             (library.appendingPathComponent("MinisChat/skills", isDirectory: true),
              AIChatViewModel.minisSkillsPersistentDir, "skills"),
-            // Old App Group MinisShared → new shared
-            (container.appendingPathComponent("MinisShared", isDirectory: true),
-             AIChatViewModel.minisSharedPersistentDir, "MinisShared→shared"),
         ]
+        if let container {
+            migrations.append((
+                container.appendingPathComponent("MinisShared", isDirectory: true),
+                AIChatViewModel.minisSharedPersistentDir,
+                "MinisShared→shared"
+            ))
+        }
 
         for migration in migrations {
             guard fm.fileExists(atPath: migration.source.path) else { continue }

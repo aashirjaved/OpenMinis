@@ -194,7 +194,7 @@ final class ShareCoordinator: ObservableObject {
             shareLog.info("[Share] consumeBuffer: expired (age=\(String(format: "%.1f", age))s > \(Self.bufferTTL)s), discarding")
             SharedContainerStore.cleanSharedFiles()
             // [T-share-buffer-merge] Never drop a share silently: the user
-            // explicitly shared content into Minis — tell them it didn't make
+            // explicitly shared content into Magzi — tell them it didn't make
             // it instead of letting the screenshot vanish into thin air.
             Task { @MainActor in
                 ShareFeedbackToast.show(AppLocalized("Shared content expired. Please share again."))

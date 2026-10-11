@@ -159,7 +159,7 @@ final class MountedFoldersManager {
     // MARK: - Persistence
 
     /// Mounts metadata lives in the App Group's private MinisConfig subdir
-    /// so it does NOT leak into iOS Files' "On My iPhone → Minis" view.
+    /// so it does NOT leak into iOS Files' "On My iPhone → Magzi" view.
     /// Historically stored in `minisAppGroupRoot/mounted-folders.json`, but
     /// that path sits inside the FileProvider's exposed root.
     private static var storeURL: URL {
@@ -172,7 +172,7 @@ final class MountedFoldersManager {
         AIChatViewModel.minisAppGroupRoot.appendingPathComponent("mounted-folders.json")
     }
 
-    /// Move `mounted-folders.json` out of providerRoot into MinisConfig the
+    /// Move `mounted-folders.json` out of providerRoot into MagziConfig the
     /// first time this runs after the fix. Safe to call on every launch.
     private func migrateStoreFileIfNeeded() {
         let fm = FileManager.default
@@ -187,13 +187,13 @@ final class MountedFoldersManager {
         }
         do {
             try fm.moveItem(at: legacy, to: current)
-            mountLog.info("migrateStoreFile: moved \(legacy.lastPathComponent) to MinisConfig/")
+            mountLog.info("migrateStoreFile: moved \(legacy.lastPathComponent) to MagziConfig/")
         } catch {
             // Fallback: copy + delete, in case move-across-bind fails.
             do {
                 try fm.copyItem(at: legacy, to: current)
                 try fm.removeItem(at: legacy)
-                mountLog.info("migrateStoreFile: copied \(legacy.lastPathComponent) to MinisConfig/ (move failed, copy+delete succeeded)")
+                mountLog.info("migrateStoreFile: copied \(legacy.lastPathComponent) to MagziConfig/ (move failed, copy+delete succeeded)")
             } catch {
                 mountLog.warning("migrateStoreFile failed: \(error.localizedDescription)")
             }

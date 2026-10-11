@@ -1389,6 +1389,9 @@ struct PastableTextView: UIViewRepresentable {
         tv.delegate = context.coordinator
         tv.font = UIFont.systemFont(ofSize: FontSettings.shared.scaledChatInput(16.5))
         tv.backgroundColor = .clear
+        tv.textColor = .label
+        tv.tintColor = UIColor(named: "AccentColor") ?? .systemTeal
+        tv.keyboardAppearance = .default
         if let maxHeightOverride { tv.maxHeight = maxHeightOverride }
         tv.isScrollEnabled = false
         tv.textContainerInset = .zero
@@ -1591,6 +1594,10 @@ struct PastableTextView: UIViewRepresentable {
             }
         }
 
+        tv.textColor = .label
+        tv.tintColor = UIColor(named: "AccentColor") ?? .systemTeal
+        tv.keyboardAppearance = .default
+
         // Keep font in sync with FontSettings
         let inputFont = UIFont.systemFont(ofSize: FontSettings.shared.scaledChatInput(16.5))
         if tv.font != inputFont {
@@ -1611,6 +1618,7 @@ struct PastableTextView: UIViewRepresentable {
         // Sync placeholder
         if let label = tv.viewWithTag(999) as? UILabel {
             label.isHidden = !text.isEmpty
+            label.textColor = .placeholderText
             if label.font != inputFont { label.font = inputFont }
             // Sync placeholder text — soulName changes (SOUL.md edit)
             // flow through as a new `placeholder` value from the parent,

@@ -69,6 +69,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         config.delegateClass = SceneDelegate.self
         return config
     }
+
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        Task { @MainActor in await MagziHub.shared.registerPushToken(deviceToken) }
+    }
 }
 
 /// Receives Home Screen Quick Action events in a scene-based SwiftUI

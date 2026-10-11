@@ -1039,6 +1039,22 @@ extension AIChatViewModel {
             result.pendingSpeakBuffer = ""
             _ = await MainActor.run { self.feedDynamicTTS(buf, force: true) }
         }
+        // Also force-flush the visible text block. Short replies often finish
+        // before the 200ms streaming throttle fires, leaving the assistant block
+        // empty even though result.assistantText contains the reply.
+        if let blockIdx = currentTextBlockIdx, !result.assistantText.isEmpty {
+            await MainActor.run {
+                guard msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count else { return }
+                self.setStreamingTextBlockContent(
+                    msgIdx: msgIdx,
+                    blockIdx: blockIdx,
+                    text: result.assistantText,
+                    parsedMarkdown: MarkdownContent(prepareMarkdownForRender(result.assistantText)),
+                    cacheAttributedString: true,
+                    requestScroll: true
+                )
+            }
+        }
         return result
     }
 
