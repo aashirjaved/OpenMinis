@@ -320,7 +320,7 @@ struct MagziItemResponse: Codable, Hashable, Sendable {
     var kind: String?
 }
 
-enum MagziItemsView: String, Sendable { case open, mine, shopping, decisions }
+enum MagziItemsView: String, Sendable { case open, mine, shopping, decisions, likely }
 
 struct MagziFact: Codable, Hashable, Identifiable, Sendable {
     var key: String?

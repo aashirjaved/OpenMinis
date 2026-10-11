@@ -25,9 +25,12 @@ struct MagziRootView: View {
                 .badge(hub.isAdmin ? hub.pendingApprovalsCount : 0)
                 .tag(MagziRouter.Tab.household)
 
-            ContentView()
-                .tabItem { Label("Ad-hoc", systemImage: "sparkles") }
-                .tag(MagziRouter.Tab.adhoc)
+            // Kid-safe: no on-device agent for a child or teen.
+            if !hub.isMinor {
+                ContentView()
+                    .tabItem { Label("Ad-hoc", systemImage: "sparkles") }
+                    .tag(MagziRouter.Tab.adhoc)
+            }
 
             NavigationStack { MoreView() }
                 .tabItem { Label("More", systemImage: "ellipsis.circle") }
@@ -46,12 +49,15 @@ struct MagziRootView: View {
         .onChange(of: hub.isAdmin) { _ in
             Task { await adminHealth.refreshIfAdmin() }
         }
+        .onChange(of: hub.isMinor) { minor in
+            if minor, router.tab == .adhoc { router.tab = .home }
+        }
         .onReceive(MagziWebSocket.shared.events.receive(on: RunLoop.main)) { event in
             guard case .messageDone(_, let done) = event, done.isProactive, router.tab != .magzi else { return }
             unreadProactive += 1
         }
         .onReceive(NotificationCenter.default.publisher(for: .magziAdhocNewTask).receive(on: RunLoop.main)) { note in
-            router.startAdhocTask(prompt: note.object as? String)
+            if !hub.isMinor { router.startAdhocTask(prompt: note.object as? String) }
         }
     }
 }

@@ -70,9 +70,11 @@ struct MoreView: View {
         }
     }
 
-    private var adhocModelsLink: some View {
-        NavigationLink { MagziGatewayModelsView() } label: {
-            MagziRow(title: "Ad-hoc models", subtitle: MagziGateway.defaultModelId, systemImage: "cpu", tint: MagziDesign.violet)
+    @ViewBuilder private var adhocModelsLink: some View {
+        if !hub.isMinor { // no on-device agent for a child or teen
+            NavigationLink { MagziGatewayModelsView() } label: {
+                MagziRow(title: "Ad-hoc models", subtitle: MagziGateway.defaultModelId, systemImage: "cpu", tint: MagziDesign.violet)
+            }
         }
     }
 

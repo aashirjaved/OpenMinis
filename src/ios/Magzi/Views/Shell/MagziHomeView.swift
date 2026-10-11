@@ -30,7 +30,7 @@ struct MagziHomeView: View {
                 } else {
                     connectCard
                 }
-                adhocCard
+                if !hub.isMinor { adhocCard }
             }
             .padding(.horizontal, MagziDesign.Spacing.gutter)
             .padding(.top, MagziDesign.Spacing.s)
@@ -160,7 +160,7 @@ struct MagziHomeView: View {
             presenceSection
             realitySection
         }
-        capabilitiesStrip
+        if !hub.isMinor { capabilitiesStrip } // the starter questions are adult capabilities
         if let lastLoadedAt, case .offline = hub.status {
             Text("Updated \(lastLoadedAt.formatted(.relative(presentation: .named)))")
                 .font(MagziDesign.Typography.footnote)
@@ -217,10 +217,12 @@ struct MagziHomeView: View {
         case approval(MagziApproval)
         case chore(MagziToday.RotaEntry)
         case item(MagziItem)
+        case likely(MagziItem)
         case bill(MagziBill)
 
         var id: String {
             switch self {
+            case .likely(let i): return "l\(i.id)"
             case .approval(let a): return "a\(a.id)"
             case .chore(let c): return "c\(c.id)"
             case .item(let i): return "i\(i.id)"
@@ -247,6 +249,9 @@ struct MagziHomeView: View {
         let items = today.dueToday.filter { !doneIds.contains($0.id) && ($0.owner == nil || isMine($0.owner)) }
         let choreIds = Set(chores.map(\.chore.itemId))
         rows += items.filter { !choreIds.contains($0.id) }.map { .item($0) }
+        // Said done, not confirmed: a kid sees it's waiting on a grown-up; a grown-up can confirm.
+        let likely = today.likely.filter { !doneIds.contains($0.id) }
+        rows += (hub.isMinor ? likely.filter { isMine($0.owner) } : likely.filter { !isMine($0.owner) }).map { .likely($0) }
         let soon = Date().addingTimeInterval(3 * 86_400).magziMs
         rows += today.billsDueSoon.filter { ($0.due ?? .max) <= soon }.map { .bill($0) }
         return rows
@@ -391,6 +396,21 @@ struct MagziHomeView: View {
                     Button { Task { await claim(item, rowId: row.id) } } label: {
                         Label("Claim", systemImage: "hand.raised")
                     }
+                }
+            }
+        case .likely(let item):
+            MagziRow(
+                title: item.title ?? "Item",
+                subtitle: hub.isMinor ? "You said it's done · a grown-up confirms" : "\(item.owner?.magziNonEmpty ?? "Someone") says it's done",
+                systemImage: "hourglass",
+                tint: MagziDesign.amber
+            ) {
+                if !hub.isMinor {
+                    Button("Confirm") { Task { await complete(itemId: item.id, rowId: row.id, title: item.title ?? "Item", undoable: false) } }
+                        .buttonStyle(MagziCompactButtonStyle(tint: MagziDesign.mint, prominent: true))
+                        .lineLimit(1)
+                        .fixedSize()
+                        .disabled(busyIds.contains(row.id))
                 }
             }
         case .bill(let bill):

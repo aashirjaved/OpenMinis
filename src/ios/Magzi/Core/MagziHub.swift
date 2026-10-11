@@ -13,6 +13,8 @@ struct MagziToday: Hashable, Sendable {
     /// Bills/renewals due within 7 days (including up to 1 day overdue).
     var billsDueSoon: [MagziBill] = []
     var approvals: [MagziApproval] = []
+    /// Someone said these were done; a grown-up has not confirmed yet (`status == "likely"`).
+    var likely: [MagziItem] = []
     /// Per-section failures (e.g. 403 for a role); the other sections still load.
     var errors: [String] = []
 
@@ -41,10 +43,15 @@ final class MagziHub: ObservableObject {
     @Published private(set) var me: MagziMe?
     @Published private(set) var households: [MagziHousehold] = []
     @Published var selectedHouseholdId: String? {
-        didSet { UserDefaults.standard.set(selectedHouseholdId, forKey: Self.selectedKey) }
+        didSet {
+            UserDefaults.standard.set(selectedHouseholdId, forKey: Self.selectedKey)
+            if oldValue != selectedHouseholdId { Task { await refreshMyRole() } }
+        }
     }
     @Published private(set) var status: ConnectionStatus
     @Published private(set) var pendingApprovalsCount = 0
+    /// My role in the selected household (owner/adult/teen/child/guest/carer), from the members route.
+    @Published private(set) var myRole: String?
     @Published private(set) var isRefreshing = false
     @Published private(set) var lastError: String?
 
@@ -94,6 +101,9 @@ final class MagziHub: ObservableObject {
     var person: MagziPerson? { me?.person }
     var isPaired: Bool { MagziAuthStore.shared.isPaired }
     var isAdmin: Bool { user?.isAdmin ?? false }
+    /// Child or teen: the shell hides the on-device agent, bills and adult-only sections (the daemon enforces the rest).
+    var isMinor: Bool { ["child", "teen"].contains((myRole ?? "").lowercased()) }
+    var isChild: Bool { (myRole ?? "").lowercased() == "child" }
     var selectedHousehold: MagziHousehold? {
         households.first { $0.id == selectedHouseholdId } ?? households.first
     }
@@ -135,6 +145,7 @@ final class MagziHub: ObservableObject {
             if MagziWebSocket.shared.isConnected { status = .online }
             await MagziChatStore.shared.configure(userId: me.user.userId, personId: me.person?.personId)
             await refreshApprovalsCount()
+            await refreshMyRole()
         } catch MagziError.unauthorized {
             status = .unpaired
         } catch {
@@ -142,6 +153,14 @@ final class MagziHub: ObservableObject {
             status = .offline(error.localizedDescription)
             logger.warning("Refresh failed: \(error.localizedDescription)")
             MagziWebSocket.shared.connect()
+        }
+    }
+
+    /// My household role; kept when the route is briefly unavailable so the shell doesn't flicker.
+    func refreshMyRole() async {
+        guard isPaired, let id = selectedHousehold?.id else { myRole = nil; return }
+        if let r = try? await MagziAPI.shared.members(householdId: id) {
+            myRole = r.members?.first { $0.me == true }?.role
         }
     }
 
@@ -168,7 +187,8 @@ final class MagziHub: ObservableObject {
         async let rotaResult = Self.capture { try await api.rota(householdId: id) }
         async let billsResult = Self.capture { try await api.bills(householdId: id) }
         async let approvalsResult = Self.capture { try await api.approvals(householdId: id) }
-        let (items, rota, bills, approvals) = await (itemsResult, rotaResult, billsResult, approvalsResult)
+        async let likelyResult = Self.capture { try await api.items(householdId: id, view: .likely) }
+        let (items, rota, bills, approvals, likely) = await (itemsResult, rotaResult, billsResult, approvalsResult, likelyResult)
 
         let calendar = Calendar.current
         let now = Date()
@@ -181,6 +201,9 @@ final class MagziHub: ObservableObject {
             let open = list.filter(\.isOpen)
             today.dueToday = open.filter { ($0.dueAt ?? .max) < endMs }.sorted { ($0.dueAt ?? 0) < ($1.dueAt ?? 0) }
             today.upcoming = Array(open.filter { ($0.dueAt ?? .min) >= endMs }.sorted { ($0.dueAt ?? 0) < ($1.dueAt ?? 0) }.prefix(5))
+        }
+        if case .success(let l) = likely {
+            today.likely = l
         }
         if case .success(let r) = rota {
             let range = startOfToday.magziMs..<endMs

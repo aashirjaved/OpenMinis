@@ -331,15 +331,24 @@ private struct HhOverview: View {
                 title: "Open items", value: d.items == nil ? "—" : "\(open.count)",
                 systemImage: "checklist", tint: MagziDesign.blue,
                 caption: d.items == nil ? "Unavailable" : "\(unclaimed) unclaimed"))
-            gridLink(.reality, MagziMetricCard(
-                title: "This week",
-                value: planned > 0 ? HhFormat.percent(Double(done) / Double(planned)) : "—",
-                systemImage: "chart.pie", tint: MagziDesign.mint,
-                caption: planned > 0 ? "\(done) of \(planned)" : "Nothing planned"))
-            gridLink(.bills, MagziMetricCard(
-                title: "Bills", value: d.bills == nil ? "—" : "\(dueBills.count)",
-                systemImage: "creditcard", tint: MagziDesign.amber,
-                caption: dueBills.first?.due.map { "Next: \(HhFormat.relativeDay($0.magziDate))" } ?? "None due"))
+            if !hub.isChild {
+                gridLink(.reality, MagziMetricCard(
+                    title: "This week",
+                    value: planned > 0 ? HhFormat.percent(Double(done) / Double(planned)) : "—",
+                    systemImage: "chart.pie", tint: MagziDesign.mint,
+                    caption: planned > 0 ? "\(done) of \(planned)" : "Nothing planned"))
+            }
+            if hub.isMinor {
+                gridLink(.rota, MagziMetricCard(
+                    title: "My chore", value: Self.myChoreToday(d.rota) ?? "—",
+                    systemImage: "arrow.triangle.2.circlepath", tint: MagziDesign.mint,
+                    caption: "Today"))
+            } else {
+                gridLink(.bills, MagziMetricCard(
+                    title: "Bills", value: d.bills == nil ? "—" : "\(dueBills.count)",
+                    systemImage: "creditcard", tint: MagziDesign.amber,
+                    caption: dueBills.first?.due.map { "Next: \(HhFormat.relativeDay($0.magziDate))" } ?? "None due"))
+            }
             gridLink(.meals, MagziMetricCard(
                 title: "Dinner", value: tonight ?? "—",
                 systemImage: "fork.knife", tint: MagziDesign.violet,
@@ -387,6 +396,11 @@ private struct HhOverview: View {
         let myChore = Self.myChoreToday(d.rota)
         let members = Set((d.rota?.people ?? []) + (d.presence ?? []).compactMap(\.name)).count
         let pending = (d.approvals ?? []).filter(\.isPending).count
+        // Kid-safe: a child or teen gets their own view of the house (bills, approvals,
+        // facts, activity and the parents' weekly summary are the adults'); a child also
+        // has no group chat or reality (the daemon answers 403).
+        var hidden: Set<HhRoute> = hub.isMinor ? [.bills, .approvals, .facts, .activity, .summary] : []
+        if hub.isChild { hidden.formUnion([.reality, .thread]) }
         let rows: [(HhRoute, String, String, Color, String?)] = [
             (.items, "Items", "checklist", MagziDesign.blue, d.items.map { "\($0.filter(\.isOpen).count)" }),
             (.rota, "Rota", "arrow.triangle.2.circlepath", MagziDesign.mint, myChore.map { "You: \($0)" }),
@@ -399,7 +413,7 @@ private struct HhOverview: View {
             (.activity, "Activity", "clock.arrow.circlepath", MagziDesign.labelSecondary, nil),
             (.summary, "Weekly summary", "doc.richtext", MagziDesign.labelSecondary, "Week \(HhFormat.weekNumber(Date()))"),
             (.members, "Members", "person.2", MagziDesign.labelSecondary, members > 0 ? "\(members)" : nil),
-        ]
+        ].filter { !hidden.contains($0.0) }
         return VStack(spacing: 0) {
             ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
                 if index > 0 { Divider().padding(.leading, 58) }

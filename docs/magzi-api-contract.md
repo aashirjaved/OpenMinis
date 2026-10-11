@@ -236,7 +236,7 @@ type Sharing = {               // context::store::Sharing, camelCase, #[serde(de
 **19. GET `/mobile/v1/households`** A → `{ households: Group[] }`. Admin users see every enabled group. Other users see the groups where a member with their `displayName` is in the chat or shares load.
 
 **20. GET `/mobile/v1/households/:id/items`** A
-- Query `?view=open|mine|shopping|decisions` (default `open`; anything else returns all open items).
+- Query `?view=open|mine|shopping|decisions|likely` (default `open`; anything else returns all open items).
 - 200 `{ items: Item[] }`. 403 (household role lacks UseSharedList). 404 `{error:"household not found"}`.
 
 **21. POST `/mobile/v1/households/:id/items`** A (capture)
