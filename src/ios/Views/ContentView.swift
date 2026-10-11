@@ -4665,6 +4665,9 @@ struct ContentView: View {
                 .accessibilityIdentifier("onboarding.restoreBackup")
             }
             Spacer()
+            }
+            .frame(maxHeight: .infinity)
+            .padding(.horizontal, 28)
         }
         .sheet(isPresented: $showAddProvider) {
             NavigationStack {
