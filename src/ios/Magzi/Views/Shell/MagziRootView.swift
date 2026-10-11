@@ -22,7 +22,7 @@ struct MagziRootView: View {
 
             HouseholdView()
                 .tabItem { Label("Household", systemImage: "person.2") }
-                .badge(hub.isAdmin ? hub.pendingApprovalsCount : 0)
+                .badge(hub.canDecide ? hub.pendingApprovalsCount : 0)
                 .tag(MagziRouter.Tab.household)
 
             // Kid-safe: no on-device agent for a child or teen.

@@ -15,9 +15,9 @@ struct HhApprovalsView: View {
 
     var body: some View {
         List {
-            if !hub.isAdmin {
+            if !hub.canDecide {
                 Section {
-                    Label("Only household admins can approve or deny. You can see what's waiting.", systemImage: "info.circle")
+                    Label("Only grown-ups can approve or deny. You can see what's waiting.", systemImage: "info.circle")
                         .font(MagziDesign.Typography.footnote)
                         .foregroundStyle(MagziDesign.labelSecondary)
                 }
@@ -102,7 +102,7 @@ struct HhApprovalsView: View {
                         .foregroundStyle(MagziDesign.labelTertiary)
                 }
             }
-            if hub.isAdmin {
+            if hub.canDecide {
                 HStack(spacing: MagziDesign.Spacing.m) {
                     Button("Deny") { Task { await decide(a, approve: false) } }
                         .buttonStyle(MagziSecondaryButtonStyle())

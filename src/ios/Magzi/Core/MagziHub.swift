@@ -104,6 +104,8 @@ final class MagziHub: ObservableObject {
     /// Child or teen: the shell hides the on-device agent, bills and adult-only sections (the daemon enforces the rest).
     var isMinor: Bool { ["child", "teen"].contains((myRole ?? "").lowercased()) }
     var isChild: Bool { (myRole ?? "").lowercased() == "child" }
+    /// May decide approvals: an admin login, or an owner/adult in the selected household (the daemon checks the same).
+    var canDecide: Bool { isAdmin || ["owner", "adult"].contains((myRole ?? "").lowercased()) }
     /// Lower-cased names the daemon may use for me (person, login, first name).
     var myNames: Set<String> {
         let full = [person?.displayName, user?.displayName].compactMap { $0?.lowercased() }.filter { !$0.isEmpty }

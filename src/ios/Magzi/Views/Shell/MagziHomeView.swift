@@ -242,7 +242,7 @@ struct MagziHomeView: View {
 
     private var todayRows: [TodayRow] {
         guard let today else { return [] }
-        var rows: [TodayRow] = hub.isAdmin ? today.approvals.map { .approval($0) } : []
+        var rows: [TodayRow] = hub.canDecide ? today.approvals.map { .approval($0) } : []
         let chores = today.rotaToday.filter { !doneIds.contains($0.chore.itemId) }
         let mine = chores.filter { isMine($0.person) }
         rows += (myNames.isEmpty ? chores : mine).map { .chore($0) }
@@ -353,11 +353,11 @@ struct MagziHomeView: View {
         case .approval(let approval):
             MagziRow(
                 title: approval.summary?.magziNonEmpty ?? approval.kind ?? "Approval",
-                subtitle: hub.isAdmin ? "Needs your OK" : "Waiting for an admin",
+                subtitle: hub.canDecide ? "Needs your OK" : "Waiting for a grown-up",
                 systemImage: "checkmark.shield",
                 tint: MagziDesign.amber
             ) {
-                if hub.isAdmin {
+                if hub.canDecide {
                     HStack(spacing: 6) {
                         Button("Deny") { Task { await decide(approval, approve: false) } }
                             .buttonStyle(MagziCompactButtonStyle(tint: MagziDesign.labelSecondary))

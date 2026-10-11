@@ -112,7 +112,7 @@ struct MagziChatView: View {
                                 actionTitle: "Retry") { socket.reconnect() }
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
-            if hub.isAdmin, hub.pendingApprovalsCount > 0 {
+            if hub.canDecide, hub.pendingApprovalsCount > 0 {
                 MagziChatBanner(
                     systemImage: "checkmark.shield",
                     tint: MagziDesign.amber,
