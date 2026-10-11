@@ -1,0 +1,56 @@
+{
+  "mode": "staging-active",
+  "runtimeStateDir": "__DIR__/state",
+  "workspaceDir": "__DIR__/ws",
+  "timezone": "Europe/London",
+  "whatsapp": {
+    "routeRecipient": "+447700900001"
+  },
+  "primaryChannel": "whatsapp",
+  "mobile": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 8767,
+    "bootstrapAdminEmail": "aashir@family.test",
+    "otpMinIntervalSecs": 5
+  },
+  "admin": {
+    "enabled": false
+  },
+  "llm": {
+    "providers": [
+      {
+        "name": "9router",
+        "kind": "9router",
+        "baseUrl": "http://100.89.191.89:20128/v1",
+        "apiKeyEnv": "MAGZI_9ROUTER_KEY",
+        "model": "magzi-agent",
+        "timeoutSecs": 180
+      }
+    ]
+  },
+  "embeddings": {
+    "enabled": false
+  },
+  "backups": {
+    "enabled": false
+  },
+  "updateCheck": {
+    "enabled": false
+  },
+  "neuroHelper": {
+    "enabled": true,
+    "dailyTokenBudget": 0,
+    "groups": [
+      {
+        "name": "Javed Home",
+        "conversationId": "javed-home@g.us",
+        "morningCheckin": "",
+        "eveningCheckin": "",
+        "nightBefore": "",
+        "weeklyReset": "",
+        "coupleCheckin": ""
+      }
+    ]
+  }
+}
