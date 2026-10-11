@@ -28,8 +28,9 @@ struct HouseholdView: View {
         }
         .sheet(isPresented: $showJoin) { HhJoinSheet() }
         .onChange(of: hub.selectedHouseholdId) { _ in path = NavigationPath() }
-        .onAppear { consumeApprovalsLink() }
+        .onAppear { consumeApprovalsLink(); consumeRouteLink() }
         .onChange(of: router.showHouseholdApprovals) { _ in consumeApprovalsLink() }
+        .onChange(of: router.householdRoute) { _ in consumeRouteLink() }
         .onChange(of: hub.selectedHousehold?.id) { _ in consumeApprovalsLink() }
         .onChange(of: auth.isPaired) { paired in
             if paired { showConnect = false }
@@ -41,6 +42,12 @@ struct HouseholdView: View {
         guard router.showHouseholdApprovals, auth.isPaired, hub.selectedHousehold != nil else { return }
         router.showHouseholdApprovals = false
         path = NavigationPath([HhRoute.approvals])
+    }
+
+    private func consumeRouteLink() {
+        guard let route = router.householdRoute, auth.isPaired, hub.selectedHousehold != nil else { return }
+        router.householdRoute = nil
+        path = NavigationPath([route])
     }
 
     @ViewBuilder
@@ -435,6 +442,7 @@ private struct HhOverview: View {
         let short = Date().formatted(.dateTime.weekday(.abbreviated)).lowercased()
         let match = plan.first { entry in
             let day = (entry.day ?? "").lowercased()
+            if let date = HhFormat.isoDay(day) { return Calendar.current.isDateInToday(date) }
             return day == full || day == short || day.hasPrefix(short) || day == "today" || day == "tonight"
         }
         return match?.meal?.magziNonEmpty

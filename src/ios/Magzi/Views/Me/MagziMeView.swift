@@ -131,6 +131,7 @@ struct MagziMeView: View {
         let (wr, mr) = await (w, m)
         switch wr {
         case .success(let r): week = r; weekError = nil
+        case .failure(let e) where HhErrors.status(e) == 404: week = MagziTimeReport(); weekError = nil // no ledger yet = empty week
         case .failure(let e): weekError = e
         }
         if case .success(let mem) = mr { memoryCount = (mem.notes?.count ?? 0) + (mem.facts?.count ?? 0) }

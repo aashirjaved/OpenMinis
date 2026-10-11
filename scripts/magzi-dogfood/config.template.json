@@ -15,7 +15,9 @@
     "otpMinIntervalSecs": 5
   },
   "admin": {
-    "enabled": false
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 8766
   },
   "llm": {
     "providers": [

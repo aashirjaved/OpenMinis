@@ -279,15 +279,25 @@ struct HhActivityView: View {
             if let text = payload["summary"]?.stringValue ?? payload["text"]?.stringValue ?? payload["message"]?.stringValue {
                 return text
             }
-            if let title = payload["title"]?.stringValue {
-                return "\(HhFormat.capitalized(Self.kindWords(event.kind))): \(title)"
+            let who = payload["name"]?.stringValue?.magziNonEmpty
+            if let title = payload["title"]?.stringValue?.magziNonEmpty {
+                return "“\(title)” \(Self.kindWords(event.kind))" + (who.map { " by \($0)" } ?? "")
             }
         }
         return HhFormat.capitalized(Self.kindWords(event.kind))
     }
 
+    /// "bus.ItemDone" → "done", "item.changed" → "changed", "ItemDropped" → "dropped".
     private static func kindWords(_ kind: String?) -> String {
-        (kind ?? "update").replacingOccurrences(of: ".", with: " ").replacingOccurrences(of: "_", with: " ")
+        var k = kind ?? "update"
+        if let dot = k.lastIndex(of: ".") { k = String(k[k.index(after: dot)...]) }
+        if k.lowercased().hasPrefix("item") { k = String(k.dropFirst(4)) }
+        var words = ""
+        for c in k {
+            if c.isUppercase, !words.isEmpty { words += " " }
+            words += c == "_" ? " " : String(c).lowercased()
+        }
+        return words.trimmingCharacters(in: .whitespaces).magziNonEmpty ?? "updated"
     }
 
     private func load() async {

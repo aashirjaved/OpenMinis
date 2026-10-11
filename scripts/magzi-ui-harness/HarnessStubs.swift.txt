@@ -17,12 +17,29 @@ struct MagziSettingsView: View { var body: some View { Text("Settings (stubbed)"
             _ = try? await MagziAPI.shared.verifyLogin(email: "owner@example.com", code: "000000")
             await MagziHub.shared.refresh()
         }
+        // Real local daemon: plant the code first (scripts/magzi-dogfood/otp.py <state> <email>).
+        if let email = ProcessInfo.processInfo.environment["MAGZI_LOGIN_EMAIL"], MagziAuthStore.shared.user?.email != email {
+            MagziAuthStore.shared.signOut() // the sim keychain group is shared across the per-member bundles
+            MagziAuthStore.shared.serverURLString = ProcessInfo.processInfo.environment["MAGZI_SERVER"] ?? "http://127.0.0.1:8767"
+            _ = try? await MagziAPI.shared.verifyLogin(email: email, code: ProcessInfo.processInfo.environment["MAGZI_LOGIN_CODE"] ?? "424242")
+            await MagziHub.shared.refresh()
+        }
+        // Cockpit: request a code on the host (POST /api/login), read it from stub/outbox.jsonl, pass it here.
+        if let code = ProcessInfo.processInfo.environment["MAGZI_COCKPIT_CODE"] {
+            MagziCockpitAuth.shared.serverURLString = ProcessInfo.processInfo.environment["MAGZI_COCKPIT_SERVER"] ?? "http://127.0.0.1:8766"
+            try? await MagziCockpitAuth.shared.verify(code: code)
+        }
+        if let hh = ProcessInfo.processInfo.environment["MAGZI_HH"], let route = HhRoute.named(hh) {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            MagziRouter.shared.householdRoute = route
+        }
         if let text = ProcessInfo.processInfo.environment["MAGZI_AUTOSEND"] {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             MagziRouter.shared.askMagzi(text, send: true)
         }
     } } }
 }
+struct MagziGatewaySettingsStub: View { var body: some View { Text("gateway settings (not in harness)") } }
 struct AboutView: View { var body: some View { Text("About (stubbed)") } }
 struct MagziGatewayModelsView: View { var body: some View { Text("Gateway models (stubbed)") } }
 enum MagziGateway { static var defaultModelId: String? { "cx/gpt-5.5" } }
@@ -40,6 +57,17 @@ struct HarnessRoot: View {
         case "admin": NavigationStack { MagziAdminView() }
         case "ops": NavigationStack { MagziOpsView() }
         case "bridge": BridgeHarnessView()
+        case "memory": NavigationStack { MeMemoryView() }
+        case "timeline": NavigationStack { MeTimelineView() }
+        case "week": NavigationStack { MeWeekView() }
+        case "places": NavigationStack { MePlacesView() }
+        case "activity": NavigationStack { MeActivityView() }
+        case "preferences": NavigationStack { MePreferencesView() }
+        case "privacy": NavigationStack { MePrivacyView() }
+        case "devices": NavigationStack { MeDevicesView() }
+        case "users": NavigationStack { MeAdminUsersView() }
+        case "pairing": NavigationStack { MeAdminPairingView() }
+        case "settings": NavigationStack { MagziGatewaySettingsStub() }
         default: MagziRootView()
         }
     }

@@ -18,6 +18,24 @@ enum HhRoute: Hashable {
     case activity
     case summary
     case members
+
+    /// Deep-link / harness names (`items`, `rota`, `meals`, …).
+    static func named(_ name: String) -> HhRoute? {
+        switch name.lowercased() {
+        case "items": return .items
+        case "rota": return .rota
+        case "meals": return .meals
+        case "bills": return .bills
+        case "approvals": return .approvals
+        case "reality": return .reality
+        case "thread": return .thread
+        case "facts": return .facts
+        case "activity": return .activity
+        case "summary": return .summary
+        case "members": return .members
+        default: return nil
+        }
+    }
 }
 
 // MARK: - Errors
@@ -108,6 +126,18 @@ enum HhFormat {
     }
 
     /// Value for `progress {action: schedule, when}`. Locale-independent.
+    /// A plan day from the daemon is "2026-10-12" (or "Mon"/"today"); shows as "MON".
+    static func dayLabel(_ raw: String) -> String {
+        if let date = isoDay(raw) { return date.formatted(.dateTime.weekday(.abbreviated)) }
+        return String(raw.prefix(3))
+    }
+
+    static func isoDay(_ raw: String) -> Date? {
+        guard raw.count == 10, raw.dropFirst(4).first == "-" else { return nil }
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"; f.timeZone = .current
+        return f.date(from: raw)
+    }
+
     static func whenString(_ date: Date) -> String {
         // RFC 3339 with offset: a bare "yyyy-MM-dd HH:mm" is read in the household's zone, not the phone's.
         let f = ISO8601DateFormatter()

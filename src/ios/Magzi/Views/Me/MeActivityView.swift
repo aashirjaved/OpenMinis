@@ -64,7 +64,9 @@ struct MeActivityView: View {
                 Text(entry.what ?? "")
                     .font(MagziDesign.Typography.body)
                     .foregroundStyle(MagziDesign.label)
-                let sub = [entry.why?.magziNonEmpty, entry.household?.magziNonEmpty].compactMap { $0 }.joined(separator: " · ")
+                // The daemon sends the household id (a WhatsApp JID); show its name.
+                let house = entry.household?.magziNonEmpty.map { id in MagziHub.shared.households.first { $0.id == id }?.name?.magziNonEmpty ?? (id.contains("@") ? "" : id) }
+                let sub = [entry.why?.magziNonEmpty, house?.magziNonEmpty].compactMap { $0 }.joined(separator: " · ")
                 if !sub.isEmpty {
                     Text(sub)
                         .font(MagziDesign.Typography.footnote)

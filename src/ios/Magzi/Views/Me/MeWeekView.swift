@@ -123,7 +123,8 @@ struct MeWeekView: View {
             error = nil
         } catch is CancellationError {
         } catch {
-            self.error = error
+            // No ledger yet (404) is an empty week, not a failure.
+            if HhErrors.status(error) == 404 { report = MagziTimeReport(); self.error = nil } else { self.error = error }
         }
     }
 }

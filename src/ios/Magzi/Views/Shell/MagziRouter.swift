@@ -20,6 +20,8 @@ final class MagziRouter: ObservableObject {
     @Published var sendDraftImmediately = false
     /// Set by `magzi://household/approvals`; the Household view consumes and clears it.
     @Published var showHouseholdApprovals = false
+    /// A Household screen to push next (`magzi://household/<route>`); the Household view consumes and clears it.
+    @Published var householdRoute: HhRoute?
     /// Set when the Ask Magzi entry asks for dictation; the chat view consumes and clears it.
     @Published var startDictation = false
 
@@ -53,7 +55,7 @@ final class MagziRouter: ObservableObject {
             }
         case "household":
             tab = .household
-            if path == "approvals" { showHouseholdApprovals = true }
+            if path == "approvals" { showHouseholdApprovals = true } else if let r = HhRoute.named(path) { householdRoute = r }
         case "adhoc":
             if path == "new" {
                 startAdhocTask(prompt: components?.queryItems?.first(where: { $0.name == "prompt" })?.value)

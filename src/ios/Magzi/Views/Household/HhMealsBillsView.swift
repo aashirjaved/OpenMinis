@@ -75,7 +75,7 @@ struct HhMealsView: View {
 
     private func dayRow(day: String, meal: String?, cook: String?, quick: Bool = false) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: MagziDesign.Spacing.m) {
-            Text(String(day.prefix(3)).uppercased())
+            Text(HhFormat.dayLabel(day).uppercased())
                 .font(MagziDesign.Typography.eyebrow)
                 .foregroundStyle(MagziDesign.labelSecondary)
                 .frame(width: 44, alignment: .leading)

@@ -46,6 +46,7 @@ enum HhItemActions {
 // MARK: - Items list
 
 struct HhItemsView: View {
+    @ObservedObject private var hub = MagziHub.shared
     let householdId: String
 
     private enum Filter: String, CaseIterable, Identifiable {
@@ -114,7 +115,7 @@ struct HhItemsView: View {
         .confirmationDialog(moreItem?.title ?? "Item", isPresented: Binding(get: { moreItem != nil }, set: { if !$0 { moreItem = nil } }), titleVisibility: .visible, presenting: moreItem) { item in
             Button("Park") { Task { await progress(item, "park") } }
             Button("Schedule…") { scheduleItem = item }
-            Button("Delegate…") { delegateItem = item }
+            if !hub.isChild { Button("Delegate…") { delegateItem = item } }
             Button("Drop", role: .destructive) { Task { await progress(item, "drop") } }
         } message: { _ in
             Text("Drop stops Magzi tracking it.")
@@ -185,13 +186,14 @@ struct HhItemsView: View {
                 Button {
                     Task { await done(item) }
                 } label: {
-                    Image(systemName: "circle")
+                    Image(systemName: canAct(item) ? "circle" : "lock.circle")
                         .font(.system(size: 22))
                         .foregroundStyle(item.isOverdue ? MagziDesign.amber : MagziDesign.labelTertiary)
                         .frame(width: 30, height: 44)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Mark done")
+                .disabled(!canAct(item))
+                .accessibilityLabel(canAct(item) ? "Mark done" : "A grown-up finishes this one")
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.title ?? "Untitled")
                         .font(MagziDesign.Typography.body)
@@ -205,25 +207,44 @@ struct HhItemsView: View {
             }
         }
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
-            Button { Task { await done(item) } } label: { Label("Done", systemImage: "checkmark") }
-                .tint(MagziDesign.mint)
+            if canAct(item) {
+                Button { Task { await done(item) } } label: { Label("Done", systemImage: "checkmark") }
+                    .tint(MagziDesign.mint)
+            }
         }
         .swipeActions(edge: .trailing) {
-            Button { moreItem = item } label: { Label("More", systemImage: "ellipsis") }
-                .tint(.gray)
+            if canAct(item) {
+                Button { moreItem = item } label: { Label("More", systemImage: "ellipsis") }
+                    .tint(.gray)
+            }
             if (item.owner ?? "").isEmpty {
                 Button { Task { await claim(item) } } label: { Label("Claim", systemImage: "hand.raised") }
                     .tint(MagziDesign.blue)
             }
         }
         .contextMenu {
-            Button { Task { await done(item) } } label: { Label("Done", systemImage: "checkmark") }
-            Button { Task { await claim(item) } } label: { Label("Claim", systemImage: "hand.raised") }
-            Button { Task { await progress(item, "park") } } label: { Label("Park", systemImage: "parkingsign") }
-            Button { scheduleItem = item } label: { Label("Schedule…", systemImage: "calendar") }
-            Button { delegateItem = item } label: { Label("Delegate…", systemImage: "person.crop.circle.badge.plus") }
-            Button(role: .destructive) { Task { await progress(item, "drop") } } label: { Label("Drop", systemImage: "trash") }
+            if canAct(item) {
+                Button { Task { await done(item) } } label: { Label("Done", systemImage: "checkmark") }
+            }
+            if (item.owner ?? "").isEmpty {
+                Button { Task { await claim(item) } } label: { Label("Claim", systemImage: "hand.raised") }
+            }
+            if canAct(item) {
+                Button { Task { await progress(item, "park") } } label: { Label("Park", systemImage: "parkingsign") }
+                Button { scheduleItem = item } label: { Label("Schedule…", systemImage: "calendar") }
+                if !hub.isChild {
+                    Button { delegateItem = item } label: { Label("Delegate…", systemImage: "person.crop.circle.badge.plus") }
+                }
+                Button(role: .destructive) { Task { await progress(item, "drop") } } label: { Label("Drop", systemImage: "trash") }
+            }
         }
+    }
+
+    /// A child can only change unclaimed items and their own (the daemon refuses the rest).
+    private func canAct(_ item: MagziItem) -> Bool {
+        guard hub.isChild else { return true }
+        let owner = (item.owner ?? "").lowercased()
+        return owner.isEmpty || hub.myNames.contains(owner) || hub.myNames.contains { owner.hasPrefix($0) }
     }
 
     // MARK: Grouping

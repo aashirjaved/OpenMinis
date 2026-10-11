@@ -104,6 +104,12 @@ final class MagziHub: ObservableObject {
     /// Child or teen: the shell hides the on-device agent, bills and adult-only sections (the daemon enforces the rest).
     var isMinor: Bool { ["child", "teen"].contains((myRole ?? "").lowercased()) }
     var isChild: Bool { (myRole ?? "").lowercased() == "child" }
+    /// Lower-cased names the daemon may use for me (person, login, first name).
+    var myNames: Set<String> {
+        let full = [person?.displayName, user?.displayName].compactMap { $0?.lowercased() }.filter { !$0.isEmpty }
+        let first = full.compactMap { $0.split(separator: " ").first.map(String.init) }
+        return Set(full + first)
+    }
     var selectedHousehold: MagziHousehold? {
         households.first { $0.id == selectedHouseholdId } ?? households.first
     }
