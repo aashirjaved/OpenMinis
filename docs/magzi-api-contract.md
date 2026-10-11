@@ -488,6 +488,7 @@ type PlaceView = { id: number; name: string; kind: string /* "home"|"work"|…|"
 | `message.done` (proactive) | `mobile:<userId>` | `{ messageId, text, direction: "out", createdAtMs, proactive: true, meta: { source: "neuro_helper", kind: string, householdId: string, proactive: true } }` |
 | `thread.line` | householdId | `{ householdId: string, line: ThreadLine }` |
 | `reality.changed` | householdId | `{ householdId: string }`. Refetch `/households/:id/reality`. |
+| `person.line` | `person:<pid>` | `{ line: Message }` — a WhatsApp line (`channel: "whatsapp"`, `direction: "in"|"out"`) in my own private chat, same shape as `/conversations/person:<pid>/messages` rows. Upsert into the unified thread. |
 
 Delta semantics:
 - Within a round, the deltas in `seq` order concatenate to that model call's text.
@@ -496,7 +497,7 @@ Delta semantics:
 - `[SILENT]` replies never stream.
 - `message.done` carries the authoritative final text.
 
-`thread.line` and `reality.changed` are polled server-side every 3 s. They go to the household's linked app users whose role is not child or guest.
+`thread.line`, `reality.changed` and `person.line` are polled server-side every 3 s. They go to the household's linked app users whose role is not child or guest.
 
 Example delta frame:
 ```json

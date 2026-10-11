@@ -952,6 +952,8 @@ enum MagziLiveEvent: Hashable, Sendable {
     case messageDelta(conversationId: String, delta: String, round: Int, seq: Int)
     case messageDone(conversationId: String, MagziMessageDone)
     case threadLine(householdId: String, MagziThreadLine)
+    /// A WhatsApp line in my own private chat, pushed live (`person.line`).
+    case personLine(conversationId: String, MagziMessage)
     case realityChanged(householdId: String)
     case unknown(MagziEnvelope)
 
@@ -990,6 +992,12 @@ enum MagziLiveEvent: Hashable, Sendable {
             }
         case "reality.changed":
             self = .realityChanged(householdId: p?["householdId"]?.stringValue ?? conv)
+        case "person.line":
+            if let line = try? p?["line"]?.decode(MagziMessage.self) {
+                self = .personLine(conversationId: conv, line)
+            } else {
+                self = .unknown(e)
+            }
         default:
             self = .unknown(e)
         }
@@ -1001,6 +1009,7 @@ enum MagziLiveEvent: Hashable, Sendable {
             return c
         case .threadLine(let h, _), .realityChanged(let h):
             return h
+        case .personLine(let c, _): return c
         case .ready: return nil
         case .unknown(let e): return e.conversationId
         }

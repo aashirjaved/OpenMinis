@@ -10,7 +10,9 @@ set -euo pipefail
 K=$(cd "$(dirname "$0")" && pwd)
 BIN=$1; DIR=${2:-$HOME/magzi-dogfood}
 mkdir -p "$DIR/state" "$DIR/ws" "$DIR/home" "$DIR/stub"
-echo 'setInterval(()=>{},1e9)' > "$DIR/stub/bridge.js"   # no package.json: no npm install, no Baileys
+# No package.json: no npm install, no Baileys. A stub already there (e.g. the
+# inbox-tailing one from the kit) is kept, so WhatsApp lines can be injected.
+[ -f "$DIR/stub/bridge.js" ] || cp "$K/stub-bridge.js" "$DIR/stub/bridge.js"
 sed "s|__DIR__|$DIR|g" "$K/config.template.json" > "$DIR/config.json"
 if [ ! -f "$DIR/state/secrets.env" ]; then
   KEY=$(sed -n 's/^[[:space:]]*LOCAL_DEFAULT_PROVIDER_API_KEY[[:space:]]*=[[:space:]]*//p' "$K/../../src/ios/Configs/ProviderCustomization.xcconfig")

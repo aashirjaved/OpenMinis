@@ -237,6 +237,15 @@ final class MagziChatStore: ObservableObject {
             )
             if let existing = messages.first(where: { $0.id == done.messageId }) { message.createdAt = existing.createdAt }
             upsert(message)
+        case .personLine(let conv, let line):
+            // Only shown while reading the unified thread; the app-only view
+            // stays app-only. Same row shape as history, so one upsert.
+            guard useUnifiedThread, conv == conversationId else { return }
+            upsert(MagziChatMessage(
+                id: line.messageId, role: line.direction == "in" ? .user : .assistant, text: line.text ?? "",
+                createdAt: (line.createdAtMs ?? Date().magziMs).magziDate, status: .delivered,
+                channel: line.channel ?? "whatsapp"
+            ))
         case .threadLine, .realityChanged, .unknown:
             break
         }
